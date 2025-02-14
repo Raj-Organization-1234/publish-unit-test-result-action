@@ -138,16 +138,16 @@ jobs:
         run: |
           echo "Creating a pull request..."
           
-          PR_TITLE="Sync Upstream Changes"
-          PR_BODY="Cherry-picked commits from upstream automatically."
+          ESCAPED_TITLE=$(echo "${{ env.PR_TITLE }}" | jq -Rsa .)
+          ESCAPED_BODY=$(echo "${{ env.PR_BODY }}" | jq -Rsa .)
 
           API_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             -d "{
-              \"title\": \"$PR_TITLE\",
-              \"body\": \"$PR_BODY\",
-              \"head\": \"$BRANCH_NAME\",
-              \"base\": \"main\",
+              \"title\": $ESCAPED_TITLE,
+              \"body\": $ESCAPED_BODY,
+              \"head\": \"${{ env.BRANCH_NAME }}\",
+              \"base\": \"${{ inputs.base_branch }}\",
               \"draft\": false
             }" "https://api.github.com/repos/${{ github.repository }}/pulls")
 
