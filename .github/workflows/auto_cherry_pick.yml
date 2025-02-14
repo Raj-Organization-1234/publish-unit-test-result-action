@@ -1,16 +1,170 @@
-name: Dependency Audit Fix Run
+name: Auto Cherry-Pick from Upstream
 
 on:
-  workflow_dispatch:
+  workflow_call:
+    inputs:
+      original-owner:
+        description: "Owner of the original repository"
+        required: true
+        type: string
+      repo-name:
+        description: "Repository name to sync from"
+        required: true
+        type: string
 
 permissions:
   contents: write
   pull-requests: write
-  packages: read
 
 jobs:
-  audit-fix:
-    uses: step-security/reusable-workflows/.github/workflows/auto_cherry_pick.yaml@fix_Auto-Cherry-Pick
-    with:
-      original-owner: "EnricoMi"
-      repo-name: "publish-unit-test-result-action"
+  check-upstream:
+    name: Check for New Commits in Upstream
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Fetch full history for comparison
+
+      - name: Set up Git User
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add Upstream Remote and Fetch Changes
+        run: |
+          UPSTREAM_URL="https://github.com/${{ inputs.original-owner }}/${{ inputs.repo-name }}.git"
+          echo "Fetching from upstream: $UPSTREAM_URL"
+
+          # Add upstream remote only if not already added
+          git remote | grep -q upstream || git remote add upstream "$UPSTREAM_URL"
+
+          # Detect the default branch
+          DEFAULT_BRANCH=$(git ls-remote --symref $UPSTREAM_URL HEAD | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2}')
+          echo "Detected upstream default branch: $DEFAULT_BRANCH"
+
+          # Fetch the correct branch
+          git fetch upstream $DEFAULT_BRANCH
+
+
+      - name: Get Last Commit Date in Our Repo
+        id: last_commit
+        run: |
+          LAST_COMMIT_DATE=$(git log --pretty=format:'%cd' --date=iso8601-strict -1 origin/main)
+          echo "LAST_COMMIT_DATE=$LAST_COMMIT_DATE" >> $GITHUB_ENV
+
+      - name: Get New Commits from Upstream Since Last Commit
+        id: new_commits
+        run: |
+          NEW_COMMITS=$(git log --since="${{ env.LAST_COMMIT_DATE }}" --pretty=format:'%H %cd %s' upstream/main)
+          echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
+          echo "$NEW_COMMITS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Display New Commits
+        run: |
+          echo "New commits detected:"
+          echo "${{ env.NEW_COMMITS }}"
+
+      - name: Cherry-Pick New Commits via API
+        if: env.NEW_COMMITS != ''
+        run: |
+          BRANCH_NAME="auto-sync-${{ github.run_id }}"
+          echo "Creating new branch: $BRANCH_NAME"
+
+          # Create a new branch using GitHub API
+          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -d "{\"ref\":\"refs/heads/$BRANCH_NAME\", \"sha\":\"$(git rev-parse origin/main)\"}" \
+            https://api.github.com/repos/${{ github.repository }}/git/refs
+
+          # Cherry-pick and commit using API
+          SKIPPED_COMMITS=""
+          while read -r COMMIT_HASH COMMIT_DATE COMMIT_MSG; do
+            echo "Processing commit: $COMMIT_HASH"
+            FILES_CHANGED=$(git diff-tree --no-commit-id --name-only -r $COMMIT_HASH)
+
+            for file in $FILES_CHANGED; do
+              echo "Processing file: $file"
+
+              # Encode file content in base64
+              CONTENT=$(base64 -w 0 $file)
+              SHA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                https://api.github.com/repos/${{ github.repository }}/contents/$file?ref=$BRANCH_NAME | jq -r .sha)
+
+              if [ "$SHA" == "null" ]; then
+                SHA=""
+              fi
+
+              # Prepare commit JSON
+              JSON_PAYLOAD=$(mktemp)
+              echo "{
+                \"message\": \"Cherry-picked: $COMMIT_MSG\",
+                \"content\": \"$CONTENT\",
+                \"branch\": \"$BRANCH_NAME\",
+                \"sha\": \"$SHA\",
+                \"committer\": { \"name\": \"github-actions[bot]\", \"email\": \"github-actions[bot]@users.noreply.github.com\" }
+              }" > $JSON_PAYLOAD
+
+              # Attempt to commit the file using GitHub API
+              RESPONSE=$(curl -s -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Content-Type: application/json" \
+                --data-binary @"$JSON_PAYLOAD" \
+                https://api.github.com/repos/${{ github.repository }}/contents/$file)
+
+              # Check if the commit failed (possible conflict)
+              if echo "$RESPONSE" | grep -q "409"; then
+                echo "⚠️ Conflict detected for $file in commit $COMMIT_HASH. Skipping..."
+                SKIPPED_COMMITS="${SKIPPED_COMMITS}\n- $COMMIT_HASH ($COMMIT_MSG)"
+                continue  # Skip this file and continue with others
+              fi
+            done
+          done <<< "${{ env.NEW_COMMITS }}"
+
+          echo "Branch $BRANCH_NAME is now updated with cherry-picked commits."
+          echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
+          echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Create Pull Request Using API
+        if: env.NEW_COMMITS != ''
+        run: |
+          echo "Creating a pull request..."
+          
+          PR_TITLE="Sync Upstream Changes"
+          PR_BODY="Cherry-picked commits from upstream automatically."
+
+          API_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{
+              \"title\": \"$PR_TITLE\",
+              \"body\": \"$PR_BODY\",
+              \"head\": \"$BRANCH_NAME\",
+              \"base\": \"main\",
+              \"draft\": false
+            }" "https://api.github.com/repos/${{ github.repository }}/pulls")
+
+          echo "API Response: $API_RESPONSE"
+
+          PR_URL=$(echo "$API_RESPONSE" | jq -r '.html_url')
+          PR_NUMBER=$(echo "$API_RESPONSE" | jq -r '.number')
+
+          if [[ "$PR_URL" == "null" ]]; then
+            echo "❌ Error: PR creation failed. Check API response above."
+            exit 1
+          else
+            echo "✅ Pull Request created: $PR_URL"
+            echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+          fi
+
+      - name: Comment on PR with Skipped Commits
+        if: env.SKIPPED_COMMITS != '' && env.PR_NUMBER != ''
+        run: |
+          echo "Adding a comment to the PR about skipped commits..."
+
+          COMMENT_BODY="### ⚠️ Skipped Commits Due to Conflicts\nThe following commits were skipped due to conflicts:\n\n${{ env.SKIPPED_COMMITS }}\n\nManual resolution may be required if these changes are important."
+
+          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{
+              \"body\": \"$COMMENT_BODY\"
+            }" "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
