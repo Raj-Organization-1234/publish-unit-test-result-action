@@ -11,7 +11,8 @@ on:
         description: "Repository name to sync from"
         required: true
         type: string
-       base_branch:
+      base_branch:
+        description: "Base branch to create the PR against"
         required: true
         type: string
 
