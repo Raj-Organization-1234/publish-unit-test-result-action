@@ -11,6 +11,10 @@ on:
         description: "Repository name to sync from"
         required: true
         type: string
+       base_branch:
+        required: true
+        type: string
+
 
 permissions:
   contents: write
