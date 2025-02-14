@@ -45,7 +45,7 @@ jobs:
 
           # Fetch the correct branch
           git fetch upstream $DEFAULT_BRANCH
-
+          echo "DEFAULT_BRANCH=$DEFAULT_BRANCH" >> $GITHUB_ENV
 
       - name: Get Last Commit Date in Our Repo
         id: last_commit
@@ -56,10 +56,11 @@ jobs:
       - name: Get New Commits from Upstream Since Last Commit
         id: new_commits
         run: |
-          NEW_COMMITS=$(git log --since="${{ env.LAST_COMMIT_DATE }}" --pretty=format:'%H %cd %s' upstream/main)
+          NEW_COMMITS=$(git log --since="${{ env.LAST_COMMIT_DATE }}" --pretty=format:'%H %cd %s' upstream/${{ env.DEFAULT_BRANCH }})
           echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
           echo "$NEW_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
 
       - name: Display New Commits
         run: |
