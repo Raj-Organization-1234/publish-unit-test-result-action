@@ -52,11 +52,18 @@ jobs:
         run: |
           LAST_COMMIT_DATE=$(git log --pretty=format:'%cd' --date=iso8601-strict -1 origin/main)
           echo "LAST_COMMIT_DATE=$LAST_COMMIT_DATE" >> $GITHUB_ENV
-
-      - name: Get New Commits from Upstream Since Last Commit
+      
+      # - name: Get New Commits from Upstream Since Last Commit
+      #   id: new_commits
+      #   run: |
+      #     NEW_COMMITS=$(git log --since="${{ env.LAST_COMMIT_DATE }}" --pretty=format:'%H %cd %s' upstream/${{ env.DEFAULT_BRANCH }})
+      #     echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
+      #     echo "$NEW_COMMITS" >> $GITHUB_ENV
+      #     echo "EOF" >> $GITHUB_ENV
+      - name: Get New Commits from Upstream Since December 1, 2024
         id: new_commits
         run: |
-          NEW_COMMITS=$(git log --since="${{ env.LAST_COMMIT_DATE }}" --pretty=format:'%H %cd %s' upstream/${{ env.DEFAULT_BRANCH }})
+          NEW_COMMITS=$(git log --since="2024-12-01T00:00:00" --pretty=format:'%H %cd %s' upstream/${{ env.DEFAULT_BRANCH }})
           echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
           echo "$NEW_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
