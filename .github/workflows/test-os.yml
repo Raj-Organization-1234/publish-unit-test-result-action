@@ -1,0 +1,34 @@
+name: Test OS
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      python-version:
+        required: true
+        type: string
+      include:
+        required: true
+        type: string
+jobs:
+  test:
+    name: Test (python-${{ matrix.python-version }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.os) }}
+        python-version: ${{ fromJson(inputs.python-version) }}
+        include: ${{ fromJson(inputs.include) }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Test
+        uses: ./.github/actions/test
+        with:
+          os: ${{ matrix.os }}
+          python-version: ${{ matrix.python-version }}
