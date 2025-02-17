@@ -91,6 +91,9 @@ jobs:
             if git cherry-pick $COMMIT_HASH; then
               echo "✅ Successfully cherry-picked $COMMIT_HASH"
               CHANGES_FOUND=true
+
+              # Set author as github-actions[bot]
+              git commit --amend --no-edit --author="github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
             else
               echo "⚠️ Conflict detected or empty commit for $COMMIT_HASH. Skipping..."
               SKIPPED_COMMITS="${SKIPPED_COMMITS}\n- $COMMIT_HASH (Conflict or no changes)"
@@ -140,10 +143,9 @@ jobs:
         if: env.SKIPPED_COMMITS != '' && env.PR_NUMBER != ''
         run: |
           echo "Adding a comment to the PR about skipped commits..."
-          COMMENT_BODY="### ⚠️ Skipped Commits Due to Conflicts\nThe following commits were skipped due to conflicts:\n\n${{ env.SKIPPED_COMMITS }}\n\nManual resolution may be required if these changes are important."
+          COMMENT_BODY=$(jq -n --arg body "### ⚠️ Skipped Commits Due to Conflicts\nThe following commits were skipped due to conflicts:\n\n${{ env.SKIPPED_COMMITS }}\n\nManual resolution may be required if these changes are important." '{body: $body}')
 
           curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            -d "{
-              \"body\": \"$COMMENT_BODY\"
-            }" "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
+            -d "$COMMENT_BODY" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
