@@ -120,7 +120,7 @@ jobs:
           API_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             -d "{
-              \"title\": \"Sync Upstream Changes\",
+              \"title\": \"fix: Sync Upstream Changes\",
               \"body\": \"Cherry-picked commits from upstream automatically.\",
               \"head\": \"${{ env.BRANCH_NAME }}\",
               \"base\": \"${{ inputs.base_branch }}\",
