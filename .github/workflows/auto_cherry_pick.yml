@@ -113,7 +113,7 @@ jobs:
             echo "CHANGES=false" >> $GITHUB_ENV
           fi
 
-          eecho "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
+          echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
           echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
