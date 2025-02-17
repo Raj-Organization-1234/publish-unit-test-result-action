@@ -142,26 +142,15 @@ jobs:
       - name: Comment on PR with Skipped Commits
         if: env.SKIPPED_COMMITS != '' && env.PR_NUMBER != ''
         run: |
-          echo "Adding a comment to the PR about skipped commits..."
-          
-          SKIPPED_LIST=""
-          while read -r COMMIT_HASH; do
-            SKIPPED_LIST+="- [\`$COMMIT_HASH\`](https://github.com/${{ inputs.original-owner }}/${{ inputs.repo-name }}/commit/$COMMIT_HASH)\n"
-          done <<< "${{ env.SKIPPED_COMMITS }}"
+          echo "Adding a simple comment with skipped commit hashes..."
 
-          COMMENT_BODY=$(cat <<EOF
-          ### ⚠️ Skipped Commits Due to Conflicts
-          The following commits were skipped due to conflicts:
+          # Prepare a simple comment with only commit hashes
+          COMMENT_BODY="Skipped commits due to conflicts:\n${{ env.SKIPPED_COMMITS }}"
 
-          $SKIPPED_LIST
+          # Escape JSON properly
+          COMMENT_BODY_ESCAPED=$(echo "$COMMENT_BODY" | jq -Rs .)
 
-          **Manual resolution is required for these commits.**
-          EOF
-          )
-
-          COMMENT_BODY_ESCAPED=$(echo "$COMMENT_BODY" | jq -Rsa .)
-
-          # Send PR comment via GitHub API
+          # Post the comment via GitHub API
           curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
