@@ -1,7 +1,16 @@
 name: Auto Cherry-Pick from Upstream
+
 on:
   workflow_dispatch:
     inputs:
+      original-owner:
+        description: "Owner of the original repository"
+        required: true
+        type: string
+      repo-name:
+        description: "Repository name to sync from"
+        required: true
+        type: string
       base_branch:
         description: "Base branch to create the PR against"
         required: true
@@ -12,9 +21,149 @@ permissions:
   pull-requests: write
 
 jobs:
-  audit-fix:
-    uses: step-security/reusable-workflows/.github/workflows/auto_cherry_pick.yaml@fix_Auto-Cherry-Pick
-    with:
-      original-owner: "EnricoMi"
-      repo-name: "publish-unit-test-result-action"
-      base_branch: ${{ inputs.base_branch }}
+  check-upstream:
+    name: Cherry-Pick & Create PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Git User
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Add Upstream Remote and Fetch Changes
+        run: |
+          UPSTREAM_URL="https://github.com/${{ inputs.original-owner }}/${{ inputs.repo-name }}.git"
+          echo "Fetching from upstream: $UPSTREAM_URL"
+
+          git remote | grep -q upstream || git remote add upstream "$UPSTREAM_URL"
+
+          DEFAULT_BRANCH=$(git ls-remote --symref "$UPSTREAM_URL" HEAD | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2}')
+          echo "Detected upstream default branch: $DEFAULT_BRANCH"
+
+          git fetch upstream $DEFAULT_BRANCH
+          echo "DEFAULT_BRANCH=$DEFAULT_BRANCH" >> $GITHUB_ENV
+
+      - name: Get Last Commit Date in Our Repo
+        id: last_commit
+        run: |
+          LAST_COMMIT_DATE=$(git log --pretty=format:'%cd' --date=iso8601-strict -1 origin/main)
+          echo "LAST_COMMIT_DATE=$LAST_COMMIT_DATE" >> $GITHUB_ENV
+
+      - name: Get New Commits from Upstream Since Last Commit
+        run: |
+          NEW_COMMITS=$(git log --since="2024-12-01T00:00:00" --pretty=format:'%H' upstream/${{ env.DEFAULT_BRANCH }}) || true
+
+          if [ -z "$NEW_COMMITS" ]; then
+            echo "No new commits found. Exiting."
+            exit 0
+          fi
+
+          echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
+          echo "$NEW_COMMITS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Display New Commits
+        run: |
+          echo "New commits detected:"
+          echo "${{ env.NEW_COMMITS }}"
+
+      - name: Create New Branch
+        if: env.NEW_COMMITS != ''
+        run: |
+          git checkout "${{ inputs.base_branch }}"
+          BRANCH_NAME="auto-cherry-pick-$(date +'%Y-%m-%d-%H-%M-%S')"
+          echo "Creating a new branch: $BRANCH_NAME..."
+          git checkout -b "$BRANCH_NAME"
+          
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Cherry-Pick New Commits
+        if: env.NEW_COMMITS != ''
+        run: |
+          SKIPPED_COMMITS=""
+          CHANGES_FOUND=false
+
+          while read -r COMMIT_HASH; do
+            echo "Processing commit: $COMMIT_HASH"
+
+            git cherry-pick --abort || true
+
+            if git cherry-pick $COMMIT_HASH; then
+              echo "✅ Successfully cherry-picked $COMMIT_HASH"
+              CHANGES_FOUND=true
+
+              git commit --amend --no-edit --author="github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+            else
+              echo "⚠️ Conflict detected or empty commit for $COMMIT_HASH. Skipping..."
+             SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              git cherry-pick --abort || true
+            fi
+          done <<< "${{ env.NEW_COMMITS }}"
+
+          if [ "$CHANGES_FOUND" = true ]; then
+            git push origin "$BRANCH_NAME"
+            echo "CHANGES=true" >> $GITHUB_ENV
+          else
+            echo "No changes after cherry-pick. Skipping further steps."
+            echo "CHANGES=false" >> $GITHUB_ENV
+          fi
+
+          eecho "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
+          echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Create Pull Request Using API
+        if: env.CHANGES == 'true'
+        run: |
+          echo "Creating a pull request..."
+          API_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{
+              \"title\": \"fix: Sync Upstream Changes\",
+              \"body\": \"Cherry-picked commits from upstream automatically.\",
+              \"head\": \"${{ env.BRANCH_NAME }}\",
+              \"base\": \"${{ inputs.base_branch }}\",
+              \"draft\": false
+            }" "https://api.github.com/repos/${{ github.repository }}/pulls")
+
+          echo "API Response: $API_RESPONSE"
+          PR_URL=$(echo "$API_RESPONSE" | jq -r '.html_url')
+          PR_NUMBER=$(echo "$API_RESPONSE" | jq -r '.number')
+
+          if [[ "$PR_URL" == "null" ]]; then
+            echo "❌ Error: PR creation failed. Check API response above."
+            exit 1
+          else
+            echo "✅ Pull Request created: $PR_URL"
+            echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
+          fi
+
+      - name: Comment on PR with Skipped Commits
+        if: env.SKIPPED_COMMITS != '' && env.PR_NUMBER != ''
+        run: |
+          echo "Adding a simple comment with skipped commit hashes..."
+
+          SKIPPED_LIST=""
+          while read -r COMMIT_HASH; do
+            if [[ -n "$COMMIT_HASH" ]]; then
+              SKIPPED_LIST+="https://github.com/${{ inputs.original-owner }}/${{ inputs.repo-name }}/commit/$COMMIT_HASH\n"
+            fi
+          done <<< "${{ env.SKIPPED_COMMITS }}"
+
+          # Prepare the final comment
+          COMMENT_BODY="Skipped commits due to conflicts:\n\n$SKIPPED_LIST\nManual resolution may be required."
+
+          # Escape JSON properly
+          COMMENT_BODY_ESCAPED=$(echo -e "$COMMENT_BODY" | jq -Rs .)
+
+          # Send comment via GitHub API
+          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
+
