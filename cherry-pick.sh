@@ -1,24 +1,32 @@
 #!/bin/bash
 
-# Define the branch name
+# Ensure we are on the main branch
+git checkout main
+git pull origin main
+
+# Create a new branch for cherry-pick
 BRANCH_NAME="auto-cherry-pick-$(date +'%Y-%m-%d-%H-%M-%S')"
 echo "Creating a new branch: $BRANCH_NAME..."
-
-# Create and switch to a new branch
 git checkout -b "$BRANCH_NAME"
+
+# Ensure no previous cherry-pick is pending
+if [ -d ".git/CHERRY_PICK_HEAD" ]; then
+  echo "⚠️ Previous cherry-pick detected! Aborting..."
+  git cherry-pick --abort
+fi
 
 # Initialize variables
 SKIPPED_COMMITS=""
 CHANGES_FOUND=false
 
-# List of commits to cherry-pick (replace with real commit hashes)
-NEW_COMMITS=("11089dfba4fe1676341e7528615f0fb22caec29b")
+# List of commits to cherry-pick (replace with actual commit hashes)
+NEW_COMMITS=("11089dfba4fe1676341e7528615f0fb22caec29b" "94749bdf1da0a470fcdb34eaf7ca2e5b7280c764")
 
 # Process each commit
 for COMMIT_HASH in "${NEW_COMMITS[@]}"; do
   echo "Processing commit: $COMMIT_HASH"
 
-  # Abort any previous unfinished cherry-pick
+  # Ensure previous cherry-pick is clean before attempting a new one
   git cherry-pick --abort || true
 
   # Try cherry-picking the commit
