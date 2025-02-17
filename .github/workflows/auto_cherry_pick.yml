@@ -75,7 +75,7 @@ jobs:
           SKIPPED_COMMITS=""
           CHANGES_FOUND=false
 
-          while read -r COMMIT_HASH; do
+          while read -r COMMIT_HASH COMMIT_DATE COMMIT_MSG; do
             echo "Processing commit: $COMMIT_HASH"
             git cherry-pick $COMMIT_HASH || SKIPPED_COMMITS="${SKIPPED_COMMITS}\n- $COMMIT_HASH (Conflict detected)"
             
