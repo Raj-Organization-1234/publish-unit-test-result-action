@@ -144,8 +144,14 @@ jobs:
         run: |
           echo "Adding a simple comment with skipped commit hashes..."
 
+          SKIPPED_LIST=""
+          while read -r COMMIT_HASH; do
+            CLEAN_COMMIT_HASH=$(echo "$COMMIT_HASH" | tr -d '[:space:]')  # Remove spaces or newline issues
+            SKIPPED_LIST+="- [\`$CLEAN_COMMIT_HASH\`](https://github.com/${{ inputs.original-owner }}/${{ inputs.repo-name }}/commit/$CLEAN_COMMIT_HASH)\n"
+          done <<< "${{ env.SKIPPED_COMMITS }}"
+
           # Prepare a simple comment with only commit hashes
-          COMMENT_BODY="Skipped commits due to conflicts:\n${{ env.SKIPPED_COMMITS }}"
+          COMMENT_BODY="Skipped commits due to conflicts: ${{ env.SKIPPED_COMMITS }}"
 
           # Escape JSON properly
           COMMENT_BODY_ESCAPED=$(echo "$COMMENT_BODY" | jq -Rs .)
