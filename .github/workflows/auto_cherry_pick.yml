@@ -58,7 +58,7 @@ jobs:
 
       - name: Get New Commits from Upstream Since Last Commit
         run: |
-          NEW_COMMITS=$(git log --since="2024-12-01T00:00:00" --pretty=format:'%H %cd %s' upstream/${{ env.DEFAULT_BRANCH }})
+          NEW_COMMITS=$(git log --since="${{ env.LAST_COMMIT_DATE }}" --pretty=format:'%H' upstream/${{ env.DEFAULT_BRANCH }})
           echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
           echo "$NEW_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
