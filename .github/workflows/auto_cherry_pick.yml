@@ -146,7 +146,7 @@ jobs:
           
           SKIPPED_LIST=""
           while read -r COMMIT_HASH; do
-            SKIPPED_LIST+="- \`[$COMMIT_HASH](https://github.com/${{ inputs.original-owner }}/${{ inputs.repo-name }}/commit/$COMMIT_HASH)\` (Conflict or no changes)\n"
+            SKIPPED_LIST+="- [\`$COMMIT_HASH\`](https://github.com/${{ inputs.original-owner }}/${{ inputs.repo-name }}/commit/$COMMIT_HASH)\n"
           done <<< "${{ env.SKIPPED_COMMITS }}"
 
           COMMENT_BODY=$(cat <<EOF
@@ -155,7 +155,7 @@ jobs:
 
           $SKIPPED_LIST
 
-          Manual resolution may be required if these changes are important.
+          **Manual resolution is required for these commits.**
           EOF
           )
 
