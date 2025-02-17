@@ -143,9 +143,21 @@ jobs:
         if: env.SKIPPED_COMMITS != '' && env.PR_NUMBER != ''
         run: |
           echo "Adding a comment to the PR about skipped commits..."
-          COMMENT_BODY=$(jq -n --arg body "### ⚠️ Skipped Commits Due to Conflicts\nThe following commits were skipped due to conflicts:\n\n${{ env.SKIPPED_COMMITS }}\n\nManual resolution may be required if these changes are important." '{body: $body}')
+          
+          SKIPPED_LIST=""
+          while read -r COMMIT_HASH; do
+            SKIPPED_LIST+="- [\`$COMMIT_HASH\`](https://github.com/${{ inputs.original-owner }}/${{ inputs.repo-name }}/commit/$COMMIT_HASH) (Conflict or no changes)\n"
+          done <<< "${{ env.SKIPPED_COMMITS }}"
 
+          COMMENT_BODY="### ⚠️ Skipped Commits Due to Conflicts
+The following commits were skipped due to conflicts:
+
+$SKIPPED_LIST
+
+Manual resolution may be required if these changes are important."
+
+          # Send PR comment via GitHub API
           curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            -d "$COMMENT_BODY" \
+            -d "{\"body\": \"$COMMENT_BODY\"}" \
             "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
