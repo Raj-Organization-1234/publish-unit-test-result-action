@@ -12,7 +12,7 @@ SKIPPED_COMMITS=""
 CHANGES_FOUND=false
 
 # List of commits to cherry-pick (replace with real commit hashes)
-NEW_COMMITS=("11089dfba4fe1676341e7528615f0fb22caec29b"")
+NEW_COMMITS=("11089dfba4fe1676341e7528615f0fb22caec29b")
 
 # Process each commit
 for COMMIT_HASH in "${NEW_COMMITS[@]}"; do
