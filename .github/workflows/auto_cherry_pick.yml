@@ -16,14 +16,13 @@ on:
         required: true
         type: string
 
-
 permissions:
   contents: write
   pull-requests: write
 
 jobs:
   check-upstream:
-    name: Check for New Commits in Upstream
+    name: Cherry-Pick & Create PR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -41,116 +40,119 @@ jobs:
           UPSTREAM_URL="https://github.com/${{ inputs.original-owner }}/${{ inputs.repo-name }}.git"
           echo "Fetching from upstream: $UPSTREAM_URL"
 
-          # Add upstream remote only if not already added
+          # Add upstream remote if not already added
           git remote | grep -q upstream || git remote add upstream "$UPSTREAM_URL"
 
-          # Detect the default branch
+          # Detect default branch of upstream
           DEFAULT_BRANCH=$(git ls-remote --symref $UPSTREAM_URL HEAD | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2}')
           echo "Detected upstream default branch: $DEFAULT_BRANCH"
 
-          # Fetch the correct branch
+          # Fetch upstream branch
           git fetch upstream $DEFAULT_BRANCH
           echo "DEFAULT_BRANCH=$DEFAULT_BRANCH" >> $GITHUB_ENV
 
       - name: Get Last Commit Date in Our Repo
-        id: last_commit
         run: |
-          LAST_COMMIT_DATE=$(git log --pretty=format:'%cd' --date=iso8601-strict -1 origin/main)
+          LAST_COMMIT_DATE=$(git log --pretty=format:'%cd' --date=iso8601-strict -1 origin/${{ inputs.base_branch }})
           echo "LAST_COMMIT_DATE=$LAST_COMMIT_DATE" >> $GITHUB_ENV
-      
-      # - name: Get New Commits from Upstream Since Last Commit
-      #   id: new_commits
-      #   run: |
-      #     NEW_COMMITS=$(git log --since="${{ env.LAST_COMMIT_DATE }}" --pretty=format:'%H %cd %s' upstream/${{ env.DEFAULT_BRANCH }})
-      #     echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
-      #     echo "$NEW_COMMITS" >> $GITHUB_ENV
-      #     echo "EOF" >> $GITHUB_ENV
-      - name: Get New Commits from Upstream Since December 1, 2024
-        id: new_commits
+
+      - name: Get New Commits from Upstream Since Last Commit
         run: |
-          NEW_COMMITS=$(git log --since="2024-12-01T00:00:00" --pretty=format:'%H %cd %s' upstream/${{ env.DEFAULT_BRANCH }})
+          NEW_COMMITS=$(git log --since="${{ env.LAST_COMMIT_DATE }}" --pretty=format:'%H' upstream/${{ env.DEFAULT_BRANCH }})
           echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
           echo "$NEW_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-
 
       - name: Display New Commits
         run: |
           echo "New commits detected:"
           echo "${{ env.NEW_COMMITS }}"
 
-      - name: Cherry-Pick New Commits via API
+      - name: Cherry-Pick New Commits
         if: env.NEW_COMMITS != ''
         run: |
-          BRANCH_NAME="auto-sync-${{ github.run_id }}"
-          echo "Creating new branch: $BRANCH_NAME"
-
-          # Create a new branch using GitHub API
-          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -d "{\"ref\":\"refs/heads/$BRANCH_NAME\", \"sha\":\"$(git rev-parse origin/main)\"}" \
-            https://api.github.com/repos/${{ github.repository }}/git/refs
-
-          # Cherry-pick and commit using API
+          git checkout main
           SKIPPED_COMMITS=""
-          while read -r COMMIT_HASH COMMIT_DATE COMMIT_MSG; do
+          CHANGES_FOUND=false
+
+          while read -r COMMIT_HASH; do
             echo "Processing commit: $COMMIT_HASH"
-            FILES_CHANGED=$(git diff-tree --no-commit-id --name-only -r $COMMIT_HASH)
-
-            for file in $FILES_CHANGED; do
-              echo "Processing file: $file"
-
-              # Encode file content in base64
-              CONTENT=$(base64 -w 0 $file)
-              SHA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                https://api.github.com/repos/${{ github.repository }}/contents/$file?ref=$BRANCH_NAME | jq -r .sha)
-
-              if [ "$SHA" == "null" ]; then
-                SHA=""
-              fi
-
-              # Prepare commit JSON
-              JSON_PAYLOAD=$(mktemp)
-              echo "{
-                \"message\": \"Cherry-picked: $COMMIT_MSG\",
-                \"content\": \"$CONTENT\",
-                \"branch\": \"$BRANCH_NAME\",
-                \"sha\": \"$SHA\",
-                \"committer\": { \"name\": \"github-actions[bot]\", \"email\": \"github-actions[bot]@users.noreply.github.com\" }
-              }" > $JSON_PAYLOAD
-
-              # Attempt to commit the file using GitHub API
-              RESPONSE=$(curl -s -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Content-Type: application/json" \
-                --data-binary @"$JSON_PAYLOAD" \
-                https://api.github.com/repos/${{ github.repository }}/contents/$file)
-
-              # Check if the commit failed (possible conflict)
-              if echo "$RESPONSE" | grep -q "409"; then
-                echo "⚠️ Conflict detected for $file in commit $COMMIT_HASH. Skipping..."
-                SKIPPED_COMMITS="${SKIPPED_COMMITS}\n- $COMMIT_HASH ($COMMIT_MSG)"
-                continue  # Skip this file and continue with others
-              fi
-            done
+            git cherry-pick $COMMIT_HASH || SKIPPED_COMMITS="${SKIPPED_COMMITS}\n- $COMMIT_HASH (Conflict detected)"
+            
+            if git diff --quiet; then
+              echo "No changes detected from commit $COMMIT_HASH. Skipping..."
+              git cherry-pick --abort || true
+            else
+              CHANGES_FOUND=true
+            fi
           done <<< "${{ env.NEW_COMMITS }}"
 
-          echo "Branch $BRANCH_NAME is now updated with cherry-picked commits."
+          if [ "$CHANGES_FOUND" = true ]; then
+            git add .
+            git commit -m "Cherry-picked commits from upstream"
+            echo "CHANGES=true" >> $GITHUB_ENV
+          else
+            echo "No changes after cherry-pick. Skipping further steps."
+            echo "CHANGES=false" >> $GITHUB_ENV
+          fi
+
           echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
           echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
 
+      - name: Get Latest Commit SHA
+        if: env.CHANGES == 'true'
+        run: |
+          echo "Fetching the latest commit SHA from ${{ inputs.base_branch }}..."
+          SHA=$(git rev-parse HEAD)
+          echo "sha=$SHA" >> $GITHUB_ENV
+
+      - name: Create New Branch
+        if: env.CHANGES == 'true'
+        run: |
+          BRANCH_NAME="auto-cherry-pick-$(date +'%Y-%m-%d-%H-%M-%S')"
+          echo "Creating a new branch: $BRANCH_NAME..."
+          git checkout -b "$BRANCH_NAME"
+          git push origin "$BRANCH_NAME"
+          
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
+
+      - name: Verify Branch on GitHub
+        run: |
+          echo "Checking if branch exists on GitHub..."
+          BRANCH_EXISTS=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/branches/${{ env.BRANCH_NAME }}" | jq -r '.name')
+
+          if [[ "$BRANCH_EXISTS" == "null" ]]; then
+            echo "❌ Error: Branch ${{ env.BRANCH_NAME }} does not exist on GitHub."
+            exit 1
+          else
+            echo "✅ Branch ${{ env.BRANCH_NAME }} exists on GitHub."
+          fi
+
+      - name: Debug PR Information
+        run: |
+          echo "Creating PR from head branch: ${{ env.BRANCH_NAME }}"
+          echo "Base branch: ${{ inputs.base_branch }}"
+          if [ -z "${{ env.BRANCH_NAME }}" ]; then
+            echo "❌ Error: BRANCH_NAME is empty."
+            exit 1
+          fi
+          if [ -z "${{ inputs.base_branch }}" ]; then
+            echo "❌ Error: base_branch is empty."
+            exit 1
+          fi
+
       - name: Create Pull Request Using API
-        if: env.NEW_COMMITS != ''
+        if: env.NEW_COMMITS != '' && env.SKIP_PR != 'true'
         run: |
           echo "Creating a pull request..."
           
-          ESCAPED_TITLE=$(echo "${{ env.PR_TITLE }}" | jq -Rsa .)
-          ESCAPED_BODY=$(echo "${{ env.PR_BODY }}" | jq -Rsa .)
-
           API_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             -d "{
-              \"title\": $ESCAPED_TITLE,
-              \"body\": $ESCAPED_BODY,
+              \"title\": \"Sync Upstream Changes\",
+              \"body\": \"Cherry-picked commits from upstream automatically.\",
               \"head\": \"${{ env.BRANCH_NAME }}\",
               \"base\": \"${{ inputs.base_branch }}\",
               \"draft\": false
