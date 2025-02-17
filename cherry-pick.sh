@@ -23,11 +23,8 @@ git push --set-upstream origin "$BRANCH_NAME"
 for COMMIT_HASH in "${NEW_COMMITS[@]}"; do
   echo "Processing commit: $COMMIT_HASH"
 
-  # Ensure previous cherry-pick is clean before attempting a new one
-  git cherry-pick --abort || true
-
   # Try cherry-picking the commit
-  git cherry-pick "$COMMIT_HASH"
+  git cherry-pick --allow-empty "$COMMIT_HASH"
   git push
 
 
