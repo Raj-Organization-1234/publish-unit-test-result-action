@@ -51,7 +51,7 @@ jobs:
 
       - name: Get New Commits from Upstream Since Last Commit
         run: |
-          NEW_COMMITS=$(git log --since="2025-01-01T00:00:00" --pretty=format:'%H' upstream/${{ env.DEFAULT_BRANCH }}) || true
+          NEW_COMMITS=$(git log --since="2024-12-01T00:00:00" --pretty=format:'%H' upstream/${{ env.DEFAULT_BRANCH }}) || true
 
           if [ -z "$NEW_COMMITS" ]; then
             echo "No new commits found. Exiting."
