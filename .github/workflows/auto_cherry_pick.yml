@@ -274,10 +274,10 @@ jobs:
         run: |
           echo "Checking for existing bot comment on PR #${{ env.PR_NUMBER }}"
 
-          COMMENT_BODY="🚀 PR Updated!\n\n@rajkumarpanda, the PR has been updated with the latest cherry-picked commits.\n"
+          COMMENT_BODY='🚀 PR Updated! @rajkumarpanda, the PR has been updated with the latest cherry-picked commits.\n'
 
           if [ -n "${{ env.SKIPPED_COMMITS }}" ]; then
-            COMMENT_BODY="${COMMENT_BODY}\n⚠️ **Skipped Commits Due to Conflicts:**\n\`\`\`\n$(echo -e "${{ env.SKIPPED_COMMITS }}")\n\`\`\`\n"
+            COMMENT_BODY="${COMMENT_BODY} ⚠️ **Skipped Commits Due to Conflicts:**\n\`\`\`\n$(echo -e "${{ env.SKIPPED_COMMITS }}")\n\`\`\`\n"
           fi
 
           if [ "${{ env.WORKFLOW_CHANGES }}" == "true" ]; then
