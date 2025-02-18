@@ -274,14 +274,14 @@ jobs:
         run: |
           echo "Checking for existing bot comment on PR #${{ env.PR_NUMBER }}"
 
-          COMMENT_BODY="🚀 **PR Updated!**\n\n@rajkumarpanda, the PR has been updated with the latest cherry-picked commits: [View PR](${{ env.PR_URL }})\n\n\n"
+          COMMENT_BODY="🚀 PR Updated!\n\n@rajkumarpanda, the PR has been updated with the latest cherry-picked commits.\n"
 
           if [ -n "${{ env.SKIPPED_COMMITS }}" ]; then
-            COMMENT_BODY="${COMMENT_BODY}⚠️ **Some commits were skipped due to conflicts:**\n\n\`\`\`\n${{ env.SKIPPED_COMMITS }}\n\`\`\`\n\n"
+            COMMENT_BODY="${COMMENT_BODY}\n⚠️ **Skipped Commits Due to Conflicts:**\n${{ env.SKIPPED_COMMITS }}\n"
           fi
 
           if [ "${{ env.WORKFLOW_CHANGES }}" == "true" ]; then
-            COMMENT_BODY="${COMMENT_BODY}⚠️ **Workflow file changes detected!**\n\nWorkflow files were modified upstream but have been **excluded from this PR**.\n\n🚀 Please review and manually handle these changes."
+            COMMENT_BODY="${COMMENT_BODY}\n⚠️ **Workflow File Changes Detected**\nWorkflow files were modified upstream but have been **excluded from this PR**.\nPlease review and handle them manually."
           fi
 
           COMMENT_BODY_ESCAPED=$(echo "$COMMENT_BODY" | jq -Rs .)
@@ -289,7 +289,7 @@ jobs:
           EXISTING_COMMENT_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments" | 
-            jq -r '.[] | select(.body | contains("🚀 **PR Updated!**")) | .id')
+            jq -r '.[] | select(.body | contains("🚀 PR Updated!")) | .id')
 
           if [ -n "$EXISTING_COMMENT_ID" ]; then
             echo "Updating existing comment: $EXISTING_COMMENT_ID"
@@ -304,4 +304,3 @@ jobs:
               -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
               "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
           fi
-
