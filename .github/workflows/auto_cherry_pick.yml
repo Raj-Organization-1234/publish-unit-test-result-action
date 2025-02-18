@@ -266,33 +266,40 @@ jobs:
             fi
           fi
 
-      - name: Comment on PR with Skipped Commits
-        if: env.SKIPPED_COMMITS != ''
+      - name: Comment on PR with Updates (Single Comment Per PR)
+        if: env.PR_NUMBER != ''
         run: |
-          echo "Adding a comment with skipped commit hashes..."
-          COMMENT_BODY=""
-    
+          echo "Checking for existing bot comment on PR #${{ env.PR_NUMBER }}"
+
+          COMMENT_BODY="🚀 **PR Updated!**\n\n@rajkumarpanda, the PR has been updated with the latest cherry-picked commits: [View PR](${{ env.PR_URL }})\n\n"
+
           if [ -n "${{ env.SKIPPED_COMMITS }}" ]; then
-            COMMENT_BODY="⚠️ **Some commits were skipped due to conflicts:**\n\n${{ env.SKIPPED_COMMITS }}\n\n"
+            COMMENT_BODY="${COMMENT_BODY}⚠️ **Some commits were skipped due to conflicts:**\n\n\`\`\`\n${{ env.SKIPPED_COMMITS }}\n\`\`\`\n\n"
           fi
 
           if [ "${{ env.WORKFLOW_CHANGES }}" == "true" ]; then
-            COMMENT_BODY="${COMMENT_BODY}⚠️ **Workflow file changes detected!**\n\nWorkflow files (`.github/workflows/*.yml`) were modified in upstream commits but have been **excluded from this PR**.\n\n🚀 Please review and manually handle these changes."
-          fi    
-      
-          COMMENT_BODY_ESCAPED=$(echo -e "$COMMENT_BODY" | jq -Rs .)
-          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
+            COMMENT_BODY="${COMMENT_BODY}⚠️ **Workflow file changes detected!**\n\nWorkflow files were modified upstream but have been **excluded from this PR**.\n\n🚀 Please review and manually handle these changes."
+          fi
 
-      - name: Comment to Notify PR Creation
-        if: env.PR_NUMBER != ''
-        run: |
-          COMMENT_BODY="🚀 **PR Created Successfully!**\n\nHey @rajkumarpanda (this might not notify you), the PR has been created: [View PR](${{ env.PR_URL }})\n\nIf you don’t get a notification, please check the PR manually."
-          COMMENT_BODY_ESCAPED=$(echo -e "$COMMENT_BODY" | jq -Rs .)
+          COMMENT_BODY_ESCAPED=$(echo "$COMMENT_BODY" | jq -Rs .)
 
-          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          # Get all comments on PR
+          EXISTING_COMMENT_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments" | 
+            jq -r '.[] | select(.body | contains("🚀 **PR Updated!**")) | .id')
+
+          if [ -n "$EXISTING_COMMENT_ID" ]; then
+            echo "Updating existing comment: $EXISTING_COMMENT_ID"
+            curl -s -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID"
+          else
+            echo "No existing comment found. Creating a new comment."
+            curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
+              "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
+          fi
+
