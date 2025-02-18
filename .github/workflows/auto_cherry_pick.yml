@@ -274,25 +274,14 @@ jobs:
         run: |
           echo "Checking for existing bot comment on PR #${{ env.PR_NUMBER }}"
 
-          COMMENT_BODY="🚀 PR Updated!
-
-@rajkumarpanda, the PR has been updated with the latest cherry-picked commits."
+          COMMENT_BODY="🚀 PR Updated!\n\n@rajkumarpanda, the PR has been updated with the latest cherry-picked commits.\n"
 
           if [ -n "${{ env.SKIPPED_COMMITS }}" ]; then
-            COMMENT_BODY="${COMMENT_BODY}
-
-⚠️ **Skipped Commits Due to Conflicts:**  
-\`\`\`
-${{ env.SKIPPED_COMMITS }}
-\`\`\`"
+            COMMENT_BODY="${COMMENT_BODY}\n⚠️ **Skipped Commits Due to Conflicts:**\n\`\`\`\n$(echo -e "${{ env.SKIPPED_COMMITS }}")\n\`\`\`\n"
           fi
 
           if [ "${{ env.WORKFLOW_CHANGES }}" == "true" ]; then
-            COMMENT_BODY="${COMMENT_BODY}
-
-⚠️ **Workflow File Changes Detected**  
-Workflow files were modified upstream but have been **excluded from this PR**.  
-Please review and handle them manually."
+            COMMENT_BODY="${COMMENT_BODY}\n⚠️ **Workflow File Changes Detected**\nWorkflow files were modified upstream but have been **excluded from this PR**.\nPlease review and handle them manually.\n"
           fi
 
           COMMENT_BODY_ESCAPED=$(jq -Rs . <<< "$COMMENT_BODY")
@@ -315,4 +304,3 @@ Please review and handle them manually."
               -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
               "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
           fi
-
