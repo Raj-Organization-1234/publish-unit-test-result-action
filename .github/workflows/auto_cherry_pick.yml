@@ -274,17 +274,28 @@ jobs:
         run: |
           echo "Checking for existing bot comment on PR #${{ env.PR_NUMBER }}"
 
-          COMMENT_BODY='🚀 PR Updated! @rajkumarpanda, the PR has been updated with the latest cherry-picked commits.\n'
+          {
+            echo "🚀 PR Updated!"
+            echo ""
+            echo "@rajkumarpanda, the PR has been updated with the latest cherry-picked commits."
+            echo ""
 
-          if [ -n "${{ env.SKIPPED_COMMITS }}" ]; then
-            COMMENT_BODY="${COMMENT_BODY} ⚠️ **Skipped Commits Due to Conflicts:**\n\`\`\`\n$(echo -e "${{ env.SKIPPED_COMMITS }}")\n\`\`\`\n"
-          fi
+            if [ -n "${{ env.SKIPPED_COMMITS }}" ]; then
+              echo "⚠️ Skipped Commits Due to Conflicts:"
+              while IFS= read -r line; do
+                echo "- $line"
+              done <<< "${{ env.SKIPPED_COMMITS }}"
+              echo ""
+            fi
 
-          if [ "${{ env.WORKFLOW_CHANGES }}" == "true" ]; then
-            COMMENT_BODY="${COMMENT_BODY}\n⚠️ **Workflow File Changes Detected**\nWorkflow files were modified upstream but have been **excluded from this PR**.\nPlease review and handle them manually.\n"
-          fi
+            if [ "${{ env.WORKFLOW_CHANGES }}" == "true" ]; then
+              echo "⚠️ Workflow file changes were detected and **excluded from this PR**."
+              echo "Please review and handle them manually."
+              echo ""
+            fi
+          } > comment_body.txt
 
-          COMMENT_BODY_ESCAPED=$(jq -Rs . <<< "$COMMENT_BODY")
+          COMMENT_BODY_ESCAPED=$(jq -Rs . < comment_body.txt)
 
           EXISTING_COMMENT_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
