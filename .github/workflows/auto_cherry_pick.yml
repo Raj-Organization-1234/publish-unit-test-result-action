@@ -109,14 +109,17 @@ jobs:
           TOKEN=${{ secrets.GITHUB_TOKEN }}
           BRANCH_NAME="auto-cherry-pick"
           
-          EXISTING_PR=$(curl -s -H "Authorization: token $TOKEN" \
-            "https://api.github.com/repos/$REPO/pulls?state=open&head=${{ github.repository_owner }}:$BRANCH_NAME" \
-            | jq -r '.[0] | select(.html_url != null) | .html_url' || echo "")
+          EXISTING_PR_JSON=$(curl -s -H "Authorization: token $TOKEN" \
+            "https://api.github.com/repos/$REPO/pulls?state=open&head=${{ github.repository_owner }}:$BRANCH_NAME")
 
-          if [[ -n "$EXISTING_PR" ]]; then
-            echo "Existing PR found: $EXISTING_PR"
+          EXISTING_PR_URL=$(echo "$EXISTING_PR_JSON" | jq -r '.[0] | select(.html_url != null) | .html_url' || echo "")
+          EXISTING_PR_NUMBER=$(echo "$EXISTING_PR_JSON" | jq -r '.[0] | select(.number != null) | .number' || echo "")
+
+          if [[ -n "$EXISTING_PR_URL" && -n "$EXISTING_PR_NUMBER" ]]; then
+            echo "Existing PR found: $EXISTING_PR_URL (PR #$EXISTING_PR_NUMBER)"
             echo "pr_exists=true" >> $GITHUB_ENV
-            echo "pr_url=$EXISTING_PR" >> $GITHUB_ENV
+            echo "pr_url=$EXISTING_PR_URL" >> $GITHUB_ENV
+            echo "PR_NUMBER=$EXISTING_PR_NUMBER" >> $GITHUB_ENV
           else
             echo "No existing PR found."
             echo "pr_exists=false" >> $GITHUB_ENV
