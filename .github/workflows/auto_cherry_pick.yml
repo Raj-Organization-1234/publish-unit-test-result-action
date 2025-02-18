@@ -285,3 +285,14 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
             "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
+
+      - name: Comment to Notify PR Creation
+        if: env.PR_NUMBER != ''
+        run: |
+          COMMENT_BODY="🚀 **PR Created Successfully!**\n\nHey @rajkumarpanda (this might not notify you), the PR has been created: [View PR](${{ env.PR_URL }})\n\nIf you don’t get a notification, please check the PR manually."
+          COMMENT_BODY_ESCAPED=$(echo -e "$COMMENT_BODY" | jq -Rs .)
+
+          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
+            "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
