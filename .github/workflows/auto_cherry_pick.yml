@@ -316,12 +316,13 @@ jobs:
               "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
           fi
 
-      - name: Request Review To Get Notifications
+      - name: Request Review
         if: env.PR_NUMBER != ''
         run: |
           curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
             -d '{
-              "reviewers": ["Raj-StepSecurity"]
+              "team_reviewers": ["maintained-actions-dev"]
             }' \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ env.PR_NUMBER }}/requested_reviewers"
+
