@@ -234,16 +234,10 @@ jobs:
               continue
             fi
 
-            # Fetch latest commit SHA of the target branch
-            LATEST_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/$REPO/git/ref/heads/$BRANCH" | jq -r '.object.sha')
-
-            if [ -z "$LATEST_SHA" ] || [ "$LATEST_SHA" == "null" ]; then
-              echo "❌ Error: LATEST_SHA is missing for branch $BRANCH. Skipping commit $COMMIT_HASH."
-              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
-              continue
-            fi
+            
+            LATEST_SHA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              "https://api.github.com/repos/${{ github.repository }}/contents/$file?ref=${{ env.BRANCH_NAME }}" | jq -r .sha)
+            if [ "$SHA" == "null" ]; then SHA=""; fi
 
             echo "🌿 TREE_SHA: $TREE_SHA"
             echo "🔄 LATEST_SHA: $LATEST_SHA"
