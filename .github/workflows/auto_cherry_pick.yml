@@ -214,10 +214,23 @@ jobs:
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/$REPO/commits/$COMMIT_HASH")
 
+            # Ensure the API call returned a valid response
+            if [[ "$(echo "$COMMIT_DETAILS" | jq -r 'type')" != "object" ]]; then
+              echo "❌ Failed to fetch commit details for $COMMIT_HASH. Skipping."
+              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              continue
+            fi
+
             COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message')
             TREE_SHA=$(echo "$COMMIT_DETAILS" | jq -r '.commit.tree.sha')
 
-            MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename')
+            MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename' 2>/dev/null || echo "")
+
+            if [ -z "$MODIFIED_FILES" ]; then
+              echo "⚠️ No modified files found in commit $COMMIT_HASH. Skipping."
+              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              continue
+            fi
 
             WORKFLOW_FILE_CHANGES=$(echo "$MODIFIED_FILES" | grep "^.github/workflows/" || true)
 
