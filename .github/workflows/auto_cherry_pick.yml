@@ -230,6 +230,7 @@ jobs:
 
             WORKFLOW_FILE_CHANGES=$(echo "$MODIFIED_FILES" | grep "^.github/workflows/" || true)
 
+            echo "🔄 MODIFIED_FILES: $MODIFIED_FILES"
             if [ -n "$WORKFLOW_FILE_CHANGES" ]; then
               echo "⚠️ Skipping commit $COMMIT_HASH as it modifies workflow files."
               SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
@@ -258,8 +259,9 @@ jobs:
                 -H "Accept: application/vnd.github.v3+json" \
                 "https://api.github.com/repos/$UPSTREAM_REPO/contents/$FILE?ref=$COMMIT_HASH")
 
-              FILE_CONTENT=$(echo "$FILE_RESPONSE" | jq -r '.content' | base64 --decode | jq -Rs .)  # Escape JSON properly
+              FILE_CONTENT=$(echo "$FILE_RESPONSE" | jq -r '.content' | base64 --decode | jq -Rs .)
 
+              echo "🔄 FILE_CONTENT: $FILE_CONTENT"
               if [ -z "$FILE_CONTENT" ] || [ "$FILE_CONTENT" == "null" ]; then
                 echo "⚠️ Skipping file $FILE (could not fetch content)."
                 continue
