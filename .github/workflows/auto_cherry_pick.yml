@@ -383,6 +383,8 @@ jobs:
       - name: Create PR (If Not Existing)
         if: env.EXISTING_PR_NUMBER == ''
         run: |
+          echo "CHANGES value in this step: $CHANGES"
+          echo "CHANGES value in this step: ${{ env.CHANGES }}"
           echo "No existing PR found. Creating new PR..."
           PR_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
