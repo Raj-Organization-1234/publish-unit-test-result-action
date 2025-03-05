@@ -216,7 +216,7 @@ jobs:
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/$UPSTREAM_REPO/commits/$COMMIT_HASH")
 
-            COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message' | jq -Rs .)
+            COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message')
             TREE_SHA=$(echo "$COMMIT_DETAILS" | jq -r '.commit.tree.sha')
 
             if [ -z "$TREE_SHA" ] || [ "$TREE_SHA" == "null" ]; then
@@ -259,9 +259,9 @@ jobs:
                 -H "Accept: application/vnd.github.v3+json" \
                 "https://api.github.com/repos/$UPSTREAM_REPO/contents/$FILE?ref=$COMMIT_HASH")
                 
-              FILE_CONTENT=$(echo "$FILE_RESPONSE" | jq -r '.content' | base64 --decode | base64 | jq -Rs .)
+              FILE_CONTENT=$(echo "$FILE_RESPONSE" | jq -r '.content' | tr -d '\n')
 
-              echo "🔄 FILE_CONTENT: $FILE_CONTENT"
+              echo "🔄 FILE_CONTENT fetched for $FILE"
               if [ -z "$FILE_CONTENT" ] || [ "$FILE_CONTENT" == "null" ]; then
                 echo "⚠️ Skipping file $FILE (could not fetch content)."
                 continue
@@ -308,7 +308,6 @@ jobs:
           echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
           echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-
 
       - name: Set Up Node.js
         if: env.action_type == 'node' && env.CHANGES == 'true'
