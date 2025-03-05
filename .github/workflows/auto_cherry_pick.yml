@@ -38,7 +38,7 @@ permissions:
 
 jobs:
   check-upstream:
-    name: Cherry-Pick & Create PR
+
     runs-on: ubuntu-latest
     steps:
       - name: Harden the runner (Audit all outbound calls)
