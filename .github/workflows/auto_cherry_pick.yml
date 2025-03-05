@@ -305,6 +305,7 @@ jobs:
             exit 0
           else
             echo "CHANGES=true" >> $GITHUB_ENV
+          fi
 
           echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
           echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
