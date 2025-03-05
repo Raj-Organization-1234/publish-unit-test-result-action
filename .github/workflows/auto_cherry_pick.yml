@@ -429,14 +429,48 @@ jobs:
           fi
 
 
-      - name: Update Last Sync Date File
+      - name: Update Last Sync Date via API
         run: |
+          FILE_PATH=".github/upstream_sync.txt"
+          REPO="${{ github.repository }}"
+          BRANCH="${{ inputs.base_branch }}"
+          GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
           SYNC_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-          echo "$SYNC_DATE" > .github/upstream_sync.txt
-          git add .github/upstream_sync.txt
 
-          git commit -m "chore: update last sync date to $SYNC_DATE" || echo "No changes to commit"
-          git push origin "${{ inputs.base_branch }}" || echo "No changes to push"
+          # Fetch existing file SHA (if exists)
+          API_URL="https://api.github.com/repos/$REPO/contents/$FILE_PATH?ref=$BRANCH"
+          RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" "$API_URL")
+
+          FILE_SHA=$(echo "$RESPONSE" | jq -r '.sha')
+          if [[ "$FILE_SHA" == "null" || -z "$FILE_SHA" ]]; then FILE_SHA=""; fi
+
+          # Prepare payload for update
+          PAYLOAD=$(jq -n \
+            --arg msg "chore: update last sync date to $SYNC_DATE" \
+            --arg content "$(echo -n "$SYNC_DATE" | base64 -w 0)" \
+            --arg branch "$BRANCH" \
+            --arg sha "$FILE_SHA" \
+            '{
+              "message": $msg,
+              "content": $content,
+              "branch": $branch,
+              "sha": $sha
+            }')
+
+          # Commit update via API
+          API_UPDATE_URL="https://api.github.com/repos/$REPO/contents/$FILE_PATH"
+          UPDATE_RESPONSE=$(curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "$PAYLOAD" "$API_UPDATE_URL")
+
+          if echo "$UPDATE_RESPONSE" | jq -e .content > /dev/null; then
+            echo "✅ Last sync date updated successfully: $SYNC_DATE"
+          else
+            echo "❌ Failed to update last sync date. API Response:"
+            echo "$UPDATE_RESPONSE"
+            exit 1
+          fi
+
 
       - name: Comment on PR with Updates (Single Comment Per PR)
         if: env.PR_NUMBER != ''
