@@ -217,6 +217,12 @@ jobs:
 
             COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message')
 
+            if [ -z "$COMMIT_MESSAGE" ] || [ "$COMMIT_MESSAGE" == "null" ]; then
+              echo "⚠️ Skipping commit $COMMIT_HASH due to missing commit message."
+              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              continue
+            fi
+
             MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename')
 
             WORKFLOW_FILE_CHANGES=$(echo "$MODIFIED_FILES" | grep "^.github/workflows/" || true)
