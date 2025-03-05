@@ -404,12 +404,14 @@ jobs:
       - name: Create PR (If Not Existing)
         if: env.CHANGES == 'true' && env.PR_NUMBER == ''
         run: |
-          echo "CHANGES value in this step: $CHANGES"
-          echo "CHANGES value in this step: ${{ env.CHANGES }}"
           echo "No existing PR found. Creating new PR..."
+          
+          PR_TITLE="chore: Cherry-picked changes from upstream"
+          PR_BODY="This PR contains cherry-picked changes from upstream repository \`${{ inputs.original-owner }}/${{ inputs.repo-name }}\`.\n\n@${{ github.repository_owner }}/maintained-actions-dev Please review and approve."
+          
           PR_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            -d "{ \"title\": \"fix: Security updates\", \"head\": \"${{ env.BRANCH_NAME }}\", \"base\": \"${{ inputs.base_branch }}\", \"draft\": false }" \
+            -d "{ \"title\": \"$PR_TITLE\", \"body\": \"$PR_BODY\", \"head\": \"${{ env.BRANCH_NAME }}\", \"base\": \"${{ inputs.base_branch }}\", \"draft\": false }" \
             "https://api.github.com/repos/${{ github.repository }}/pulls")
 
           PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
@@ -423,6 +425,7 @@ jobs:
             echo "✅ Pull Request created: $PR_URL"
             echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
           fi
+
 
       - name: Update Last Sync Date File
         run: |
