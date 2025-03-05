@@ -331,8 +331,6 @@ jobs:
             echo "❌ No changes, skipping setup."
             exit 0
           fi
-        env:
-          CHANGES: ${{ env.CHANGES }}
           
       - name: Authenticate npm with GitHub Packages (if using private packages)
         if: env.action_type == 'node' && inputs.use_private_packages == true
