@@ -105,6 +105,7 @@ jobs:
           REPO=${{ github.repository }}
           TOKEN=${{ secrets.GITHUB_TOKEN }}
           BRANCH_NAME="auto-cherry-pick"
+          echo "BRANCH_NAME=$BRANCH_NAME" >> $GITHUB_ENV
           
           EXISTING_PR_JSON=$(curl -s -H "Authorization: token $TOKEN" \
             "https://api.github.com/repos/$REPO/pulls?state=open&head=${{ github.repository_owner }}:$BRANCH_NAME")
