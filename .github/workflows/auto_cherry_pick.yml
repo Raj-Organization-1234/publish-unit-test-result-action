@@ -260,6 +260,14 @@ jobs:
                 echo "$PATCH" > temp_patch.diff
 
                 patch temp_file.txt < temp_patch.diff
+                PATCH_EXIT_CODE=$?
+
+                if [ "$PATCH_EXIT_CODE" -ne 0 ]; then
+                  echo "❌ Conflict detected while applying patch to $file."
+                  echo "Skipping this file and marking commit as skipped."
+                  SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+                  continue
+                fi
 
                 # Convert patched file back to base64
                 UPDATED_CONTENT=$(base64 -w 0 temp_file.txt)
@@ -301,22 +309,10 @@ jobs:
             echo "CHANGES=true" >> $GITHUB_ENV
           fi
 
-
-
-
-          # Debugging Output
-          echo "CHANGES_FOUND: $CHANGES_FOUND"
-          echo "CHANGES (local variable): $CHANGES"
-          echo "CHANGES (GitHub env): $(grep 'CHANGES=' $GITHUB_ENV)"
-          echo "CHANGES=${{ env.CHANGES }}"
-          echo "action_type=${{ env.action_type }}"
-          echo "EXISTING_PR_NUMBER=${{ env.EXISTING_PR_NUMBER }}"
-          
-
       - name: Set Up Node.js
         if: env.action_type == 'node'
         env:
-          CHANGES: ${{ env.CHANGES }}  # ✅ Pass CHANGES explicitly
+          CHANGES: ${{ env.CHANGES }}
         uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: "20"
@@ -332,7 +328,7 @@ jobs:
             exit 0
           fi
         env:
-          CHANGES: ${{ env.CHANGES }}  # ✅ Explicitly pass CHANGES
+          CHANGES: ${{ env.CHANGES }}
           
       - name: Authenticate npm with GitHub Packages (if using private packages)
         if: env.action_type == 'node' && inputs.use_private_packages == true
