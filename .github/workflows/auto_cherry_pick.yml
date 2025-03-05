@@ -311,6 +311,8 @@ jobs:
           echo "CHANGES_FOUND: $CHANGES_FOUND"
           echo "CHANGES (local variable): $CHANGES"
           echo "CHANGES (GitHub env): $(grep 'CHANGES=' $GITHUB_ENV)"
+          echo "CHANGES=${{ env.CHANGES }}"
+          
 
       - name: Set Up Node.js
         if: env.action_type == 'node' && env.CHANGES == 'true'
