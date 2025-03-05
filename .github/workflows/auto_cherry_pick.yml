@@ -198,7 +198,7 @@ jobs:
 
       - name: Cherry-Pick New Commits via API
         run: |
-          REPO="${{ github.repository }}"
+          REPO="${{ input.repo-name }}"
           BRANCH="${{ env.BRANCH_NAME }}"
           GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
@@ -210,29 +210,17 @@ jobs:
           while read -r COMMIT_HASH; do
             echo "Processing commit: $COMMIT_HASH"
 
-            # Get the parent commit SHA
-            PARENT_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            COMMIT_DETAILS=$(curl -s -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
-              "https://api.github.com/repos/$REPO/commits/$COMMIT_HASH" | jq -r '.parents[0].sha')
+              "https://api.github.com/repos/$REPO/commits/$COMMIT_HASH")
 
-            if [ -z "$PARENT_SHA" ] || [ "$PARENT_SHA" == "null" ]; then
-              echo "❌ Could not determine parent commit for $COMMIT_HASH. Skipping."
-              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
-              continue
-            fi
+            COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message')
+            TREE_SHA=$(echo "$COMMIT_DETAILS" | jq -r '.commit.tree.sha')
 
-            # Fetch modified files using compare API
-            COMPARE_URL="https://api.github.com/repos/$REPO/compare/$PARENT_SHA...$COMMIT_HASH"
-            MODIFIED_FILES=$(curl -s -H "Authorization: token $GH_TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" "$COMPARE_URL" | jq -r '.files[].filename' 2>/dev/null || echo "")
-
-            if [ -z "$MODIFIED_FILES" ]; then
-              echo "⚠️ No modified files found in commit $COMMIT_HASH. Skipping."
-              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
-              continue
-            fi
+            MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename')
 
             WORKFLOW_FILE_CHANGES=$(echo "$MODIFIED_FILES" | grep "^.github/workflows/" || true)
+
 
             if [ -n "$WORKFLOW_FILE_CHANGES" ]; then
               echo "⚠️ Skipping commit $COMMIT_HASH as it modifies workflow files."
@@ -240,16 +228,14 @@ jobs:
               continue
             fi
 
-            # Get latest commit SHA of the branch
             LATEST_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/$REPO/git/ref/heads/$BRANCH" | jq -r '.object.sha')
 
-            # Create new commit in the existing branch
             NEW_COMMIT_SHA=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               -d "{
-                \"message\": \"$COMMIT_HASH - Cherry-picked from upstream\",
+                \"message\": \"$COMMIT_MESSAGE\",
                 \"tree\": \"$TREE_SHA\",
                 \"parents\": [\"$LATEST_SHA\"]
               }" "https://api.github.com/repos/$REPO/git/commits" | jq -r '.sha')
@@ -260,7 +246,6 @@ jobs:
               continue
             fi
 
-            # Update branch reference to point to the new commit
             curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               -d "{\"sha\": \"$NEW_COMMIT_SHA\"}" \
