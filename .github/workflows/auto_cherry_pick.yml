@@ -258,8 +258,8 @@ jobs:
               FILE_RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
                 -H "Accept: application/vnd.github.v3+json" \
                 "https://api.github.com/repos/$UPSTREAM_REPO/contents/$FILE?ref=$COMMIT_HASH")
-
-              FILE_CONTENT=$(echo "$FILE_RESPONSE" | jq -r '.content' | base64 --decode | jq -Rs .)
+                
+              FILE_CONTENT=$(echo "$FILE_RESPONSE" | jq -r '.content' | base64 --decode | base64 | jq -Rs .)
 
               echo "🔄 FILE_CONTENT: $FILE_CONTENT"
               if [ -z "$FILE_CONTENT" ] || [ "$FILE_CONTENT" == "null" ]; then
