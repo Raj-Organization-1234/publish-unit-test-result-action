@@ -339,34 +339,45 @@ jobs:
           else
             git commit -m "chore: update build artifacts"
           fi
-      - name: Create or Update Pull Request
-        if: env.CHANGES == 'true'
+      
+      - name: Reopen PR If It Was Closed
+        if: env.changes == 'true' && env.EXISTING_PR_NUMBER != ''
         run: |
-          if [ "${{ env.pr_exists }}" == "true" ]; then
-            echo "✅ PR already exists: ${{ env.pr_url }} - Forcing push with updates..."
-            git push origin "$BRANCH_NAME" --force
-          else
-            echo "Creating a new PR..."
-            git push origin "$BRANCH_NAME" --force
-            API_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+          PR_STATE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ env.EXISTING_PR_NUMBER }}" \
+            | jq -r '.state')
+
+          if [[ "$PR_STATE" == "closed" ]]; then
+            echo "🔄 Reopening closed PR #${{ env.EXISTING_PR_NUMBER }}..."
+            curl -s -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
-              -d "{
-                \"title\": \"fix: Sync Upstream Changes\",
-                \"body\": \"Cherry-picked commits from upstream automatically.\",
-                \"head\": \"${{ env.BRANCH_NAME }}\",
-                \"base\": \"${{ inputs.base_branch }}\",
-                \"draft\": false
-              }" "https://api.github.com/repos/${{ github.repository }}/pulls")
-            echo "API Response: $API_RESPONSE"
-            PR_URL=$(echo "$API_RESPONSE" | jq -r '.html_url')
-            PR_NUMBER=$(echo "$API_RESPONSE" | jq -r '.number')
-            if [[ "$PR_URL" == "null" ]]; then
-              echo "❌ Error: PR creation failed. Check API response above."
-              exit 1
-            else
-              echo "✅ Pull Request created: $PR_URL"
-              echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
-            fi
+              -d '{"state": "open"}' \
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${{ env.EXISTING_PR_NUMBER }}"
+            echo "✅ PR #${{ env.EXISTING_PR_NUMBER }} reopened."
+          else
+            echo "PR #${{ env.EXISTING_PR_NUMBER }} is already open."
+          fi
+          echo "PR_NUMBER=${{ env.EXISTING_PR_NUMBER }}" >> $GITHUB_ENV
+
+      - name: Create PR (If Not Existing)
+        if: env.changes == 'true' && env.EXISTING_PR_NUMBER == ''
+        run: |
+          echo "No existing PR found. Creating new PR..."
+          PR_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{ \"title\": \"fix: Security updates\", \"head\": \"${{ env.BRANCH_NAME }}\", \"base\": \"${{ inputs.base_branch }}\", \"draft\": false }" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls")
+
+          PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
+          PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url')
+
+          if [[ "$PR_URL" == "null" || -z "$PR_URL" ]]; then
+            echo "❌ Error: PR creation failed. Full API response:"
+            echo "$PR_RESPONSE"
+            exit 1
+          else
+            echo "✅ Pull Request created: $PR_URL"
+            echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
           fi
 
       - name: Update Last Sync Date File
