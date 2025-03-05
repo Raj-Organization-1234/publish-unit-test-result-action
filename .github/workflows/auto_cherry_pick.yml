@@ -79,20 +79,28 @@ jobs:
           git fetch upstream $DEFAULT_BRANCH
           echo "DEFAULT_BRANCH=$DEFAULT_BRANCH" >> $GITHUB_ENV
 
-      - name: Get Last Sync Date from File
+      - name: Get or Create Last Sync Date from File
         id: last_sync
         run: |
           FILE_PATH=".github/upstream_sync.txt"
+
+          # Get the default branch of your repo
+          REPO_DEFAULT_BRANCH="${{ inputs.base_branch }}"
           
           if [ -f "$FILE_PATH" ]; then
             LAST_SYNC_DATE=$(cat "$FILE_PATH")
             echo "✅ Found existing last sync date: $LAST_SYNC_DATE"
           else
-            LAST_SYNC_DATE=$(date -u --date="30 days ago" +'%Y-%m-%dT%H:%M:%SZ')
-            echo "⚠️ No sync date found. Defaulting to: $LAST_SYNC_DATE"
+            LAST_SYNC_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+            echo "⚠️ No sync date file found. Creating it with today's date: $LAST_SYNC_DATE"
+            echo "$LAST_SYNC_DATE" > "$FILE_PATH"
+            git add "$FILE_PATH"
+            git commit -m "chore: initialize upstream sync date"
+            git push origin "$REPO_DEFAULT_BRANCH"
           fi
 
           echo "LAST_SYNC_DATE=$LAST_SYNC_DATE" >> $GITHUB_ENV
+
 
       - name: Get New Commits from Upstream
         run: |
