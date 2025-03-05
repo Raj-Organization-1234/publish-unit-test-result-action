@@ -362,7 +362,7 @@ jobs:
           fi
       
       - name: Reopen PR If It Was Closed
-        if: env.changes == 'true' && env.EXISTING_PR_NUMBER != ''
+        if: env.CHANGES == 'true' && env.EXISTING_PR_NUMBER != ''
         run: |
           PR_STATE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             "https://api.github.com/repos/${{ github.repository }}/pulls/${{ env.EXISTING_PR_NUMBER }}" \
@@ -381,7 +381,7 @@ jobs:
           echo "PR_NUMBER=${{ env.EXISTING_PR_NUMBER }}" >> $GITHUB_ENV
 
       - name: Create PR (If Not Existing)
-        if: env.EXISTING_PR_NUMBER == ''
+        if: env.CHANGES == 'true' && env.EXISTING_PR_NUMBER == ''
         run: |
           echo "CHANGES value in this step: $CHANGES"
           echo "CHANGES value in this step: ${{ env.CHANGES }}"
