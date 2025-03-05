@@ -196,60 +196,74 @@ jobs:
             echo "✅ New branch ${{ env.BRANCH_NAME }} created successfully."
           fi
 
-      - name: Cherry-Pick New Commits
+      - name: Cherry-Pick New Commits via API
         run: |
+          REPO="${{ github.repository }}"
+          BRANCH="${{ env.BRANCH_NAME }}"
+          GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+
+          echo "🚀 Starting API-based cherry-picking on branch: $BRANCH"
+
           SKIPPED_COMMITS=""
           CHANGES_FOUND=false
-          WORKFLOW_CHANGES=false
+
           while read -r COMMIT_HASH; do
             echo "Processing commit: $COMMIT_HASH"
-            git cherry-pick --abort || true
-            if [ $(git rev-list --parents -n 1 $COMMIT_HASH | wc -w) -gt 2 ]; then
-              echo "⚠️ Merge commit detected ($COMMIT_HASH). Using -m 1."
-              if ! git cherry-pick -m 1 $COMMIT_HASH; then
-                echo "❌ Merge conflict detected in $COMMIT_HASH. Skipping."
-                SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
-                git cherry-pick --abort || true
-                continue
-              fi
-            else
-              if ! git cherry-pick $COMMIT_HASH; then
-                echo "❌ Conflict detected or empty commit for $COMMIT_HASH. Skipping."
-                SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
-                git cherry-pick --abort || true
-                continue
-              fi
-            fi
-            LATEST_COMMIT_FILES=$(git diff-tree --no-commit-id --name-only -r HEAD)
-            WORKFLOW_FILE_CHANGES=$(echo "$LATEST_COMMIT_FILES" | grep "^.github/workflows/" || true)
-            NON_WORKFLOW_CHANGES=$(echo "$LATEST_COMMIT_FILES" | grep -v "^.github/workflows/" || true)
+
+            COMMIT_DETAILS=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/commits/$COMMIT_HASH")
+
+            COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message')
+            TREE_SHA=$(echo "$COMMIT_DETAILS" | jq -r '.commit.tree.sha')
+
+            MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename')
+
+            WORKFLOW_FILE_CHANGES=$(echo "$MODIFIED_FILES" | grep "^.github/workflows/" || true)
+
             if [ -n "$WORKFLOW_FILE_CHANGES" ]; then
-              echo "⚠️ Workflow file changes detected. They will not be committed."
-              WORKFLOW_CHANGES=true
-              git checkout HEAD -- .github/workflows/
-              git reset HEAD -- .github/workflows/
+              echo "⚠️ Skipping commit $COMMIT_HASH as it modifies workflow files."
+              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              continue
             fi
-            if [ -n "$NON_WORKFLOW_CHANGES" ]; then
-              echo "✅ Detected non-workflow file changes."
-              CHANGES_FOUND=true
-            else
-              echo "⚠️ No real changes after workflow cleanup."
+
+            LATEST_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$REPO/git/ref/heads/$BRANCH" | jq -r '.object.sha')
+
+            NEW_COMMIT_SHA=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{
+                \"message\": \"$COMMIT_MESSAGE\",
+                \"tree\": \"$TREE_SHA\",
+                \"parents\": [\"$LATEST_SHA\"]
+              }" "https://api.github.com/repos/$REPO/git/commits" | jq -r '.sha')
+
+            if [ -z "$NEW_COMMIT_SHA" ] || [ "$NEW_COMMIT_SHA" == "null" ]; then
+              echo "❌ Failed to cherry-pick commit: $COMMIT_HASH. Skipping."
+              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              continue
             fi
-            git commit --amend --no-edit --author="github-actions[bot] <github-actions[bot]@users.noreply.github.com>"
+
+            curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"sha\": \"$NEW_COMMIT_SHA\"}" \
+              "https://api.github.com/repos/$REPO/git/refs/heads/$BRANCH"
+
+            echo "✅ Successfully cherry-picked commit: $COMMIT_HASH"
+            CHANGES_FOUND=true
           done <<< "${{ env.NEW_COMMITS }}"
-          if [ "$CHANGES_FOUND" = true ]; then
-            echo "CHANGES=true" >> $GITHUB_ENV
-          else
+
+          if [ "$CHANGES_FOUND" = false ]; then
             echo "No changes after cherry-pick. Skipping further steps."
-            echo "CHANGES=false" >> $GITHUB_ENV
+            exit 0
           fi
-          if [ "$WORKFLOW_CHANGES" = true ]; then
-            echo "WORKFLOW_CHANGES=true" >> $GITHUB_ENV
-          fi
+
+          echo "CHANGES=true" >> $GITHUB_ENV
           echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
           echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-          
+
       - name: Set Up Node.js
         if: env.action_type == 'node' && env.CHANGES == 'true'
         uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
