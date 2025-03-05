@@ -337,8 +337,6 @@ jobs:
         env:
           CHANGES: ${{ env.CHANGES }}  # ✅ Explicitly pass CHANGES
           
-
-
       - name: Authenticate npm with GitHub Packages (if using private packages)
         if: env.action_type == 'node' && inputs.use_private_packages == true
         run: |
@@ -383,7 +381,7 @@ jobs:
           echo "PR_NUMBER=${{ env.EXISTING_PR_NUMBER }}" >> $GITHUB_ENV
 
       - name: Create PR (If Not Existing)
-        if: env.changes == 'true' && env.EXISTING_PR_NUMBER == ''
+        if: env.EXISTING_PR_NUMBER == ''
         run: |
           echo "No existing PR found. Creating new PR..."
           PR_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
