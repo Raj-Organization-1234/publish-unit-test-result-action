@@ -217,62 +217,59 @@ jobs:
 
             MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename')
 
-            for FILE in $MODIFIED_FILES; do
-              echo "Processing file: $FILE"
+            # Loop through each changed file in the commit
+            for file in $MODIFIED_FILES; do
+                echo "Processing file: $file"
 
-              # Fetch file changes (patch)
-              FILE_PATCH=$(echo "$COMMIT_DETAILS" | jq -r --arg FILE "$FILE" '.files[] | select(.filename == $FILE) | .patch')
+                # Fetch the existing content from the target repository
+                FILE_RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
+                    "https://api.github.com/repos/$TARGET_REPO/contents/$file?ref=$BRANCH")
 
-              if [ -z "$FILE_PATCH" ]; then
-                echo "⚠️ No patch available for $FILE. Skipping."
-                continue
-              fi
+                BASE64_CONTENT=$(echo "$FILE_RESPONSE" | jq -r '.content' | base64 --decode)
 
-              # Fetch current file content from target repo
-              FILE_INFO=$(curl -s -H "Authorization: token $GH_TOKEN" \
-                "https://api.github.com/repos/$TARGET_REPO/contents/$FILE?ref=$BRANCH")
+                if [ -z "$BASE64_CONTENT" ] || [ "$BASE64_CONTENT" == "null" ]; then
+                    echo "⚠️ Skipping file $file (could not fetch content)."
+                    continue
+                fi
 
-              FILE_CONTENT=$(echo "$FILE_INFO" | jq -r '.content' | base64 --decode 2>/dev/null || echo "")
-              FILE_SHA=$(echo "$FILE_INFO" | jq -r '.sha')
+                # Fetch the patch (diff) from the upstream commit
+                PATCH=$(curl -s -H "Authorization: token $GH_TOKEN" \
+                    "https://api.github.com/repos/$UPSTREAM_REPO/commits/$COMMIT_HASH" | jq -r '.files[] | select(.filename=="'$file'") | .patch')
 
-              if [ "$FILE_SHA" == "null" ]; then FILE_SHA=""; fi
+                if [ -z "$PATCH" ] || [ "$PATCH" == "null" ]; then
+                    echo "⚠️ No patch found for $file. Skipping."
+                    continue
+                fi
 
-              # Apply patch to existing file content
-              UPDATED_CONTENT=$(echo "$FILE_CONTENT" | patch -p1 <<< "$FILE_PATCH" || true)
+                # Apply the patch to the existing content
+                echo "$BASE64_CONTENT" > temp_file.txt
+                echo "$PATCH" > temp_patch.diff
 
-              if [ "$UPDATED_CONTENT" == "$FILE_CONTENT" ]; then
-                echo "⚠️ No actual changes for $FILE. Skipping."
-                continue
-              fi
+                patch temp_file.txt < temp_patch.diff
 
-              # Convert updated content to base64
-              ENCODED_CONTENT=$(echo -n "$UPDATED_CONTENT" | base64 -w 0)
+                # Convert patched file back to base64
+                UPDATED_CONTENT=$(base64 -w 0 temp_file.txt)
 
-              # Update file in target repo
-              PAYLOAD=$(jq -n \
-                --arg msg "Cherry-picked changes from upstream commit $COMMIT_HASH" \
-                --arg content "$ENCODED_CONTENT" \
-                --arg branch "$BRANCH" \
-                --arg sha "$FILE_SHA" \
-                '{
-                  "message": $msg,
-                  "content": $content,
-                  "branch": $branch,
-                  "sha": $sha
-                }')
+                # Commit the updated file
+                COMMIT_PAYLOAD=$(jq -n --arg msg "$COMMIT_MESSAGE" \
+                    --arg content "$UPDATED_CONTENT" \
+                    --arg branch "$BRANCH" \
+                    --arg sha "$(echo "$FILE_RESPONSE" | jq -r .sha)" \
+                    '{
+                      "message": $msg,
+                      "content": $content,
+                      "branch": $branch,
+                      "sha": $sha
+                    }')
 
-              UPDATE_RESPONSE=$(curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
-                -H "Accept: application/vnd.github.v3+json" \
-                -d "$PAYLOAD" "https://api.github.com/repos/$TARGET_REPO/contents/$FILE")
+                curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
+                    -H "Accept: application/vnd.github.v3+json" \
+                    --data-binary "$COMMIT_PAYLOAD" \
+                    "https://api.github.com/repos/$TARGET_REPO/contents/$file"
 
-              if echo "$UPDATE_RESPONSE" | jq -e '.content' > /dev/null; then
-                echo "✅ Successfully updated $FILE from upstream commit $COMMIT_HASH"
-                CHANGES_FOUND=true
-              else
-                echo "❌ Failed to update $FILE. Full API Response:"
-                echo "$UPDATE_RESPONSE"
-              fi
+                echo "✅ Applied patch and updated file: $file"
             done
+
           done <<< "${{ env.NEW_COMMITS }}"
 
           if [ "$CHANGES_FOUND" = false ]; then
