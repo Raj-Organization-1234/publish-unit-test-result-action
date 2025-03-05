@@ -79,28 +79,54 @@ jobs:
           git fetch upstream $DEFAULT_BRANCH
           echo "DEFAULT_BRANCH=$DEFAULT_BRANCH" >> $GITHUB_ENV
 
-      - name: Get or Create Last Sync Date from File
+      - name: Get or Create Last Sync Date via API
         id: last_sync
         run: |
           FILE_PATH=".github/upstream_sync.txt"
+          REPO="${{ github.repository }}"
+          BRANCH="${{ inputs.base_branch }}"
+          GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
-          # Get the default branch of your repo
-          REPO_DEFAULT_BRANCH="${{ inputs.base_branch }}"
-          
-          if [ -f "$FILE_PATH" ]; then
-            LAST_SYNC_DATE=$(cat "$FILE_PATH")
-            echo "✅ Found existing last sync date: $LAST_SYNC_DATE"
-          else
+          API_URL="https://api.github.com/repos/$REPO/contents/$FILE_PATH?ref=$BRANCH"
+          RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" "$API_URL")
+
+          FILE_SHA=$(echo "$RESPONSE" | jq -r '.sha')
+          FILE_CONTENT=$(echo "$RESPONSE" | jq -r '.content' | base64 --decode 2>/dev/null || echo "")
+
+          if [[ "$FILE_SHA" == "null" || -z "$FILE_SHA" ]]; then
             LAST_SYNC_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
             echo "⚠️ No sync date file found. Creating it with today's date: $LAST_SYNC_DATE"
-            echo "$LAST_SYNC_DATE" > "$FILE_PATH"
-            git add "$FILE_PATH"
-            git commit -m "chore: initialize upstream sync date"
-            git push origin "$REPO_DEFAULT_BRANCH"
+
+            PAYLOAD=$(jq -n \
+              --arg msg "chore: initialize upstream sync date" \
+              --arg content "$(echo -n "$LAST_SYNC_DATE" | base64 -w 0)" \
+              --arg branch "$BRANCH" \
+              '{
+                "message": $msg,
+                "content": $content,
+                "branch": $branch
+              }')
+
+            API_CREATE_URL="https://api.github.com/repos/$REPO/contents/$FILE_PATH"
+            CREATE_RESPONSE=$(curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
+                                        -H "Accept: application/vnd.github.v3+json" \
+                                        -d "$PAYLOAD" "$API_CREATE_URL")
+
+            if echo "$CREATE_RESPONSE" | jq -e .content > /dev/null; then
+              echo "✅ Successfully created last sync date file."
+            else
+              echo "❌ Failed to create file. Response:"
+              echo "$CREATE_RESPONSE"
+              exit 1
+            fi
+          else
+            LAST_SYNC_DATE="$FILE_CONTENT"
+            echo "✅ Found existing last sync date: $LAST_SYNC_DATE"
           fi
 
           echo "LAST_SYNC_DATE=$LAST_SYNC_DATE" >> $GITHUB_ENV
-
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Get New Commits from Upstream
         run: |
