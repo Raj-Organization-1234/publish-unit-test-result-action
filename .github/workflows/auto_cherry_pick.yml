@@ -301,6 +301,7 @@ jobs:
 
           if [ "$CHANGES_FOUND" = false ]; then
             echo "No changes after cherry-pick. Skipping further steps."
+            echo "CHANGES=false" >> $GITHUB_ENV
             exit 0
           fi
 
@@ -308,6 +309,8 @@ jobs:
           echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
           echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
+          echo "CHANGES is set to: $CHANGES"
 
       - name: Set Up Node.js
         if: env.action_type == 'node' && env.CHANGES == 'true'
