@@ -215,7 +215,22 @@ jobs:
             COMMIT_DETAILS=$(curl -s -H "Authorization: token $GH_TOKEN" \
               "https://api.github.com/repos/$UPSTREAM_REPO/commits/$COMMIT_HASH")
 
+            COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message')
+
+            if [ -z "$COMMIT_MESSAGE" ] || [ "$COMMIT_MESSAGE" == "null" ]; then
+              echo "⚠️ Skipping commit $COMMIT_HASH due to missing commit message."
+              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              continue
+            fi
+
             MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename')
+
+            WORKFLOW_FILE_CHANGES=$(echo "$MODIFIED_FILES" | grep "^.github/workflows/" || true)
+            if [ -n "$WORKFLOW_FILE_CHANGES" ]; then
+              echo "⚠️ Skipping commit $COMMIT_HASH as it modifies workflow files."
+              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              continue
+            fi
 
             # Loop through each changed file in the commit
             for file in $MODIFIED_FILES; do
@@ -233,8 +248,7 @@ jobs:
                 fi
 
                 # Fetch the patch (diff) from the upstream commit
-                PATCH=$(curl -s -H "Authorization: token $GH_TOKEN" \
-                    "https://api.github.com/repos/$UPSTREAM_REPO/commits/$COMMIT_HASH" | jq -r '.files[] | select(.filename=="'$file'") | .patch')
+                PATCH=$(echo "$COMMIT_DETAILS" | jq -r '.files[] | select(.filename=="'$file'") | .patch')
 
                 if [ -z "$PATCH" ] || [ "$PATCH" == "null" ]; then
                     echo "⚠️ No patch found for $file. Skipping."
@@ -262,13 +276,19 @@ jobs:
                       "sha": $sha
                     }')
 
-                curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
+                RESPONSE=$(curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
                     -H "Accept: application/vnd.github.v3+json" \
                     --data-binary "$COMMIT_PAYLOAD" \
-                    "https://api.github.com/repos/$TARGET_REPO/contents/$file"
+                    "https://api.github.com/repos/$TARGET_REPO/contents/$file")
 
-                echo "✅ Applied patch and updated file: $file"
-                CHANGES_FOUND=true
+                if echo "$RESPONSE" | jq -e '.content' > /dev/null; then
+                  echo "✅ Applied patch and updated file: $file"
+                  CHANGES_FOUND=true
+                else
+                  echo "❌ Failed to commit changes for $file. Full response:"
+                  echo "$RESPONSE"
+                  SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+                fi
             done
 
           done <<< "${{ env.NEW_COMMITS }}"
@@ -280,6 +300,7 @@ jobs:
           else
             echo "CHANGES=true" >> $GITHUB_ENV
           fi
+
 
 
 
