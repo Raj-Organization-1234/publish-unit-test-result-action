@@ -303,9 +303,9 @@ jobs:
             echo "No changes after cherry-pick. Skipping further steps."
             echo "CHANGES=false" >> $GITHUB_ENV
             exit 0
-          fi
+          else
+            echo "CHANGES=true" >> $GITHUB_ENV
 
-          echo "CHANGES=true" >> $GITHUB_ENV
           echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
           echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
