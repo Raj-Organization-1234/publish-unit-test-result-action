@@ -309,6 +309,10 @@ jobs:
             echo "CHANGES=true" >> $GITHUB_ENV
           fi
 
+          echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
+          echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
       - name: Set Up Node.js
         if: env.action_type == 'node'
         env:
@@ -406,12 +410,10 @@ jobs:
         run: |
           echo "No existing PR found. Creating new PR..."
           
-          PR_TITLE="chore: Cherry-picked changes from upstream"
-          PR_BODY="This PR contains cherry-picked changes from upstream repository \`${{ inputs.original-owner }}/${{ inputs.repo-name }}\`.\n\n@${{ github.repository_owner }}/maintained-actions-dev Please review and approve."
-          
+          PR_TITLE="chore: Cherry-picked changes from upstream"          
           PR_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
             -H "Accept: application/vnd.github.v3+json" \
-            -d "{ \"title\": \"$PR_TITLE\", \"body\": \"$PR_BODY\", \"head\": \"${{ env.BRANCH_NAME }}\", \"base\": \"${{ inputs.base_branch }}\", \"draft\": false }" \
+            -d "{ \"title\": \"$PR_TITLE\", \"head\": \"${{ env.BRANCH_NAME }}\", \"base\": \"${{ inputs.base_branch }}\", \"draft\": false }" \
             "https://api.github.com/repos/${{ github.repository }}/pulls")
 
           PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
@@ -449,15 +451,10 @@ jobs:
             echo "@${{ github.repository_owner }}/maintained-actions-dev Please review and approve the changes."
             echo ""
             if [ -n "${{ env.SKIPPED_COMMITS }}" ]; then
-              echo "⚠️ Skipped Commits Due to Conflicts:"
+              echo "⚠️ Skipped Commits Due to Conflicts or Workflow file changes:"
               while IFS= read -r line; do
                 echo "- $line"
               done <<< "${{ env.SKIPPED_COMMITS }}"
-              echo ""
-            fi
-            if [ "${{ env.WORKFLOW_CHANGES }}" == "true" ]; then
-              echo "⚠️ Workflow file changes were detected and **excluded from this PR**."
-              echo "Please review and handle them manually."
               echo ""
             fi
           } > comment_body.txt
