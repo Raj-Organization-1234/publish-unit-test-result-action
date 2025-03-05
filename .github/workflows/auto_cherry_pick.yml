@@ -198,7 +198,7 @@ jobs:
 
       - name: Cherry-Pick New Commits via API
         run: |
-          REPO="${{ inputs.repo-name }}"
+          REPO="${{ inputs.original-owner }}/${{ inputs.repo-name }}"
           BRANCH="${{ env.BRANCH_NAME }}"
           GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
@@ -220,7 +220,6 @@ jobs:
             MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename')
 
             WORKFLOW_FILE_CHANGES=$(echo "$MODIFIED_FILES" | grep "^.github/workflows/" || true)
-
 
             if [ -n "$WORKFLOW_FILE_CHANGES" ]; then
               echo "⚠️ Skipping commit $COMMIT_HASH as it modifies workflow files."
