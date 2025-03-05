@@ -210,12 +210,19 @@ jobs:
           while read -r COMMIT_HASH; do
             echo "Processing commit: $COMMIT_HASH"
 
+            # Fetch commit details
             COMMIT_DETAILS=$(curl -s -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/$REPO/commits/$COMMIT_HASH")
 
             COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message')
             TREE_SHA=$(echo "$COMMIT_DETAILS" | jq -r '.commit.tree.sha')
+
+            if [ -z "$TREE_SHA" ] || [ "$TREE_SHA" == "null" ]; then
+              echo "❌ Error: TREE_SHA is missing for commit $COMMIT_HASH. Skipping."
+              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              continue
+            fi
 
             MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename')
 
@@ -227,24 +234,39 @@ jobs:
               continue
             fi
 
+            # Fetch latest commit SHA of the target branch
             LATEST_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/$REPO/git/ref/heads/$BRANCH" | jq -r '.object.sha')
 
-            NEW_COMMIT_SHA=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+            if [ -z "$LATEST_SHA" ] || [ "$LATEST_SHA" == "null" ]; then
+              echo "❌ Error: LATEST_SHA is missing for branch $BRANCH. Skipping commit $COMMIT_HASH."
+              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
+              continue
+            fi
+
+            echo "🌿 TREE_SHA: $TREE_SHA"
+            echo "🔄 LATEST_SHA: $LATEST_SHA"
+
+            # Create new commit in the existing branch
+            API_RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               -d "{
                 \"message\": \"$COMMIT_MESSAGE\",
                 \"tree\": \"$TREE_SHA\",
                 \"parents\": [\"$LATEST_SHA\"]
-              }" "https://api.github.com/repos/$REPO/git/commits" | jq -r '.sha')
+              }" "https://api.github.com/repos/$REPO/git/commits")
+
+            NEW_COMMIT_SHA=$(echo "$API_RESPONSE" | jq -r '.sha')
 
             if [ -z "$NEW_COMMIT_SHA" ] || [ "$NEW_COMMIT_SHA" == "null" ]; then
-              echo "❌ Failed to cherry-pick commit: $COMMIT_HASH. Skipping."
+              echo "❌ Failed to create commit for $COMMIT_HASH. Full API Response:"
+              echo "$API_RESPONSE"
               SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
               continue
             fi
 
+            # Update branch reference to point to the new commit
             curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
               -d "{\"sha\": \"$NEW_COMMIT_SHA\"}" \
@@ -263,6 +285,7 @@ jobs:
           echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
           echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
 
 
       - name: Set Up Node.js
