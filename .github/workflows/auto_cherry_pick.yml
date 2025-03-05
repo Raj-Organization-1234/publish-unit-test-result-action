@@ -199,7 +199,7 @@ jobs:
       - name: Cherry-Pick New Commits via API
         run: |
           UPSTREAM_REPO="${{ inputs.original-owner }}/${{ inputs.repo-name }}"
-          TARGET_REPO="${{ github.repository }}"  # Your repo
+          TARGET_REPO="${{ github.repository }}"
           BRANCH="${{ env.BRANCH_NAME }}"
           GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
@@ -216,7 +216,7 @@ jobs:
               -H "Accept: application/vnd.github.v3+json" \
               "https://api.github.com/repos/$UPSTREAM_REPO/commits/$COMMIT_HASH")
 
-            COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message')
+            COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message' | jq -Rs .)
             TREE_SHA=$(echo "$COMMIT_DETAILS" | jq -r '.commit.tree.sha')
 
             if [ -z "$TREE_SHA" ] || [ "$TREE_SHA" == "null" ]; then
@@ -254,29 +254,37 @@ jobs:
             # Apply upstream changes to your repository
             for FILE in $MODIFIED_FILES; do
               # Fetch file contents from upstream
-              FILE_CONTENT=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              FILE_RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
                 -H "Accept: application/vnd.github.v3+json" \
-                "https://api.github.com/repos/$UPSTREAM_REPO/contents/$FILE?ref=$COMMIT_HASH" | jq -r '.content' | base64 --decode)
+                "https://api.github.com/repos/$UPSTREAM_REPO/contents/$FILE?ref=$COMMIT_HASH")
 
-              if [ -z "$FILE_CONTENT" ]; then
+              FILE_CONTENT=$(echo "$FILE_RESPONSE" | jq -r '.content' | base64 --decode | jq -Rs .)  # Escape JSON properly
+
+              if [ -z "$FILE_CONTENT" ] || [ "$FILE_CONTENT" == "null" ]; then
                 echo "⚠️ Skipping file $FILE (could not fetch content)."
                 continue
               fi
 
-              # Create a commit with the updated file in your repository
+              # Get existing file SHA (required for updating an existing file)
               FILE_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
                 "https://api.github.com/repos/$TARGET_REPO/contents/$FILE?ref=$BRANCH" | jq -r .sha)
 
               if [ "$FILE_SHA" == "null" ]; then FILE_SHA=""; fi
 
+              PAYLOAD=$(jq -n --arg msg "$COMMIT_MESSAGE" \
+                            --arg content "$FILE_CONTENT" \
+                            --arg branch "$BRANCH" \
+                            --arg sha "$FILE_SHA" \
+                            '{
+                              "message": $msg,
+                              "content": $content,
+                              "branch": $branch,
+                              "sha": $sha
+                            }')
+
               UPDATE_RESPONSE=$(curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
                 -H "Accept: application/vnd.github.v3+json" \
-                -d "{
-                  \"message\": \"$COMMIT_MESSAGE\",
-                  \"content\": \"$(echo -n "$FILE_CONTENT" | base64)\",
-                  \"branch\": \"$BRANCH\",
-                  \"sha\": \"$FILE_SHA\"
-                }" "https://api.github.com/repos/$TARGET_REPO/contents/$FILE")
+                -d "$PAYLOAD" "https://api.github.com/repos/$TARGET_REPO/contents/$FILE")
 
               if echo "$UPDATE_RESPONSE" | jq -e '.content' > /dev/null; then
                 echo "✅ Successfully committed $FILE from upstream."
@@ -298,6 +306,7 @@ jobs:
           echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
           echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+
 
       - name: Set Up Node.js
         if: env.action_type == 'node' && env.CHANGES == 'true'
