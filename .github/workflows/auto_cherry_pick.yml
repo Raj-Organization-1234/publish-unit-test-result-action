@@ -130,24 +130,21 @@ jobs:
 
       - name: Get New Commits from Upstream
         run: |
-          echo "🔍 Fetching new commits from upstream since: ${{ env.LAST_SYNC_DATE }}"
-          NEW_COMMITS=$(git log --since="${{ env.LAST_SYNC_DATE }}" --pretty=format:'%H %s (%an, %ar)' upstream/${{ env.DEFAULT_BRANCH }} || true)
+          echo "Fetching new commits from upstream since: ${{ env.LAST_SYNC_DATE }}"
+          
+          NEW_COMMITS=$(git log --since="${{ env.LAST_SYNC_DATE }}" --pretty=format:'%H' upstream/${{ env.DEFAULT_BRANCH }} || true)
 
           if [ -z "$NEW_COMMITS" ]; then
-            echo "✅ No new commits found. Updating sync timestamp."
-            gh variable set UPSTREAM_SYNC_DATE --body "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --repo "${{ github.repository }}"
+            echo "✅ No new commits found. Skipping cherry-pick."
             exit 0
           fi
 
-          echo "🆕 New commits found since last sync:"
+          echo "🆕 New commits to cherry-pick:"
           echo "$NEW_COMMITS"
 
           echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
           echo "$NEW_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
 
       - name: Check for Existing PR
         id: check_pr
