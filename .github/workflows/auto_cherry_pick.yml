@@ -311,6 +311,7 @@ jobs:
           echo "EOF" >> $GITHUB_ENV
 
           echo "CHANGES is set to: $CHANGES"
+          echo "CHANGES is set to: ${{ env.CHANGES }}"
 
       - name: Set Up Node.js
         if: env.action_type == 'node' && env.CHANGES == 'true'
