@@ -86,27 +86,34 @@ jobs:
           
           if [ -f "$FILE_PATH" ]; then
             LAST_SYNC_DATE=$(cat "$FILE_PATH")
-            echo "Found existing sync date: $LAST_SYNC_DATE"
+            echo "✅ Found existing last sync date: $LAST_SYNC_DATE"
           else
             LAST_SYNC_DATE=$(date -u --date="30 days ago" +'%Y-%m-%dT%H:%M:%SZ')
-            echo "No sync date found. Defaulting to: $LAST_SYNC_DATE"
+            echo "⚠️ No sync date found. Defaulting to: $LAST_SYNC_DATE"
           fi
 
           echo "LAST_SYNC_DATE=$LAST_SYNC_DATE" >> $GITHUB_ENV
 
-
-      - name: Get New Commits from Upstream Since Last Commit
+      - name: Get New Commits from Upstream
         run: |
-          echo "Fetching new commits from upstream since: ${{ env.LAST_SYNC_DATE }}"
-          NEW_COMMITS=$(git log --since="${{ env.LAST_SYNC_DATE }}" --pretty=format:'%H' upstream/${{ env.DEFAULT_BRANCH }}) || true
-          
+          echo "🔍 Fetching new commits from upstream since: ${{ env.LAST_SYNC_DATE }}"
+          NEW_COMMITS=$(git log --since="${{ env.LAST_SYNC_DATE }}" --pretty=format:'%H %s (%an, %ar)' upstream/${{ env.DEFAULT_BRANCH }} || true)
+
           if [ -z "$NEW_COMMITS" ]; then
-            echo "No new commits found. Exiting."
+            echo "✅ No new commits found. Updating sync timestamp."
+            gh variable set UPSTREAM_SYNC_DATE --body "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --repo "${{ github.repository }}"
             exit 0
           fi
+
+          echo "🆕 New commits found since last sync:"
+          echo "$NEW_COMMITS"
+
           echo "NEW_COMMITS<<EOF" >> $GITHUB_ENV
           echo "$NEW_COMMITS" >> $GITHUB_ENV
           echo "EOF" >> $GITHUB_ENV
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
       - name: Check for Existing PR
         id: check_pr
