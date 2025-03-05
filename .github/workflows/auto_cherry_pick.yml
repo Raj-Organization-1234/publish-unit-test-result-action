@@ -224,18 +224,17 @@ jobs:
               continue
             fi
 
-           # Get the list of changed files in this commit
+            # Get the list of changed files
             MODIFIED_FILES=$(echo "$COMMIT_DETAILS" | jq -r '.files[].filename')
 
             WORKFLOW_FILE_CHANGES=$(echo "$MODIFIED_FILES" | grep "^.github/workflows/" || true)
 
-            echo "🔄 MODIFIED_FILES: $MODIFIED_FILES"
+            echo "🔄 MODIFIED FILES: $MODIFIED_FILES"
             if [ -n "$WORKFLOW_FILE_CHANGES" ]; then
               echo "⚠️ Skipping commit $COMMIT_HASH as it modifies workflow files."
               SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
               continue
             fi
-
 
             # Fetch the latest commit SHA of the target branch
             LATEST_SHA=$(curl -s -H "Authorization: token $GH_TOKEN" \
@@ -256,15 +255,43 @@ jobs:
             # Extract tree array from response
             TREE_ARRAY=$(echo "$TREE_RESPONSE" | jq '.tree')
 
-            # Create a new tree in the target repo
-            NEW_TREE_PAYLOAD=$(jq -n --argjson tree "$TREE_ARRAY" \
-              '{
-                "tree": $tree
-              }')
+            # Recreate all blobs in the target repo
+            NEW_TREE="[]"
+            for FILE in $(echo "$TREE_ARRAY" | jq -r '.[].path'); do
+              echo "🔄 Processing file: $FILE"
 
+              FILE_CONTENT_RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github.v3+json" \
+                "https://api.github.com/repos/$UPSTREAM_REPO/contents/$FILE?ref=$COMMIT_HASH")
+
+              FILE_BLOB_SHA=$(echo "$FILE_CONTENT_RESPONSE" | jq -r '.sha')
+              FILE_BLOB_CONTENT=$(echo "$FILE_CONTENT_RESPONSE" | jq -r '.content')
+
+              if [ -z "$FILE_BLOB_CONTENT" ] || [ "$FILE_BLOB_CONTENT" == "null" ]; then
+                echo "⚠️ Skipping file $FILE (could not fetch content)."
+                continue
+              fi
+
+              NEW_BLOB_RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+                -H "Accept: application/vnd.github.v3+json" \
+                -d "{\"content\": \"$FILE_BLOB_CONTENT\", \"encoding\": \"base64\"}" \
+                "https://api.github.com/repos/$TARGET_REPO/git/blobs")
+
+              NEW_BLOB_SHA=$(echo "$NEW_BLOB_RESPONSE" | jq -r '.sha')
+              if [ -z "$NEW_BLOB_SHA" ] || [ "$NEW_BLOB_SHA" == "null" ]; then
+                echo "❌ Failed to create blob for $FILE. Skipping."
+                continue
+              fi
+
+              NEW_TREE=$(echo "$NEW_TREE" | jq --arg path "$FILE" --arg sha "$NEW_BLOB_SHA" \
+                '. + [{ "path": $path, "mode": "100644", "type": "blob", "sha": $sha }]')
+            done
+
+            # Create a new tree with updated blobs
             NEW_TREE_RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
-              -d "$NEW_TREE_PAYLOAD" "https://api.github.com/repos/$TARGET_REPO/git/trees")
+              -d "{\"tree\": $NEW_TREE}" \
+              "https://api.github.com/repos/$TARGET_REPO/git/trees")
 
             NEW_TREE_SHA=$(echo "$NEW_TREE_RESPONSE" | jq -r '.sha')
 
@@ -308,17 +335,9 @@ jobs:
             else
               echo "❌ Failed to update branch reference. Full API Response:"
               echo "$UPDATE_RESPONSE"
-              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
             fi
           done <<< "${{ env.NEW_COMMITS }}"
 
-          if [ "$CHANGES_FOUND" = false ]; then
-            echo "No changes after cherry-pick. Skipping further steps."
-            echo "CHANGES=false" >> $GITHUB_ENV
-            exit 0
-          else
-            echo "CHANGES=true" >> $GITHUB_ENV
-          fi
 
           # Debugging Output
           echo "CHANGES_FOUND: $CHANGES_FOUND"
