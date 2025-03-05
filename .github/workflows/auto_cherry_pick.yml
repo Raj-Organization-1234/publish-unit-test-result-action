@@ -79,13 +79,21 @@ jobs:
           git fetch upstream $DEFAULT_BRANCH
           echo "DEFAULT_BRANCH=$DEFAULT_BRANCH" >> $GITHUB_ENV
 
-      - name: Get Last Sync Date from GitHub Variable
+      - name: Get Last Sync Date from File
         id: last_sync
         run: |
-          LAST_SYNC_DATE=$(gh variable get UPSTREAM_SYNC_DATE --repo "${{ github.repository }}" --json value --jq .value 2>/dev/null || echo "")
+          FILE_PATH=".github/upstream_sync.txt"
+          
+          if [ -f "$FILE_PATH" ]; then
+            LAST_SYNC_DATE=$(cat "$FILE_PATH")
+            echo "Found existing sync date: $LAST_SYNC_DATE"
+          else
+            LAST_SYNC_DATE=$(date -u --date="30 days ago" +'%Y-%m-%dT%H:%M:%SZ')
+            echo "No sync date found. Defaulting to: $LAST_SYNC_DATE"
+          fi
+
           echo "LAST_SYNC_DATE=$LAST_SYNC_DATE" >> $GITHUB_ENV
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
 
       - name: Get New Commits from Upstream Since Last Commit
         run: |
@@ -264,11 +272,14 @@ jobs:
             fi
           fi
 
-      - name: Update Last Sync Date in GitHub Variables
+      - name: Update Last Sync Date File
         run: |
-          gh variable set UPSTREAM_SYNC_DATE --body "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" --repo "${{ github.repository }}"
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SYNC_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+          echo "$SYNC_DATE" > .github/upstream_sync.txt
+          git add .github/upstream_sync.txt
+
+          git commit -m "chore: update last sync date to $SYNC_DATE" || echo "No changes to commit"
+          git push origin "${{ inputs.base_branch }}" || echo "No changes to push"
 
       - name: Comment on PR with Updates (Single Comment Per PR)
         if: env.PR_NUMBER != ''
