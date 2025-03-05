@@ -315,11 +315,26 @@ jobs:
           
 
       - name: Set Up Node.js
-        if: env.action_type == 'node' && env.CHANGES == 'true'
+        if: env.action_type == 'node'
+        env:
+          CHANGES: ${{ env.CHANGES }}  # ✅ Pass CHANGES explicitly
         uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
         with:
           node-version: "20"
           cache: ${{ inputs.package_manager }}
+
+      - name: Debug CHANGES
+        run: |
+          echo "CHANGES value in this step: $CHANGES"
+          if [ "$CHANGES" == "true" ]; then
+            echo "✅ Proceeding with setup."
+          else
+            echo "❌ No changes, skipping setup."
+            exit 0
+          fi
+        env:
+          CHANGES: ${{ env.CHANGES }}  # ✅ Explicitly pass CHANGES
+
 
       - name: Authenticate npm with GitHub Packages (if using private packages)
         if: env.action_type == 'node' && inputs.use_private_packages == true
