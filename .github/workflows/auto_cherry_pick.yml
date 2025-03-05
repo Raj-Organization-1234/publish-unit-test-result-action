@@ -359,26 +359,26 @@ jobs:
           fi
       
       - name: Reopen PR If It Was Closed
-        if: env.CHANGES == 'true' && env.EXISTING_PR_NUMBER != ''
+        if: env.CHANGES == 'true' && env.PR_NUMBER != ''
         run: |
           PR_STATE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ env.EXISTING_PR_NUMBER }}" \
+            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ env.PR_NUMBER }}" \
             | jq -r '.state')
 
           if [[ "$PR_STATE" == "closed" ]]; then
-            echo "🔄 Reopening closed PR #${{ env.EXISTING_PR_NUMBER }}..."
+            echo "🔄 Reopening closed PR #${{ env.PR_NUMBER }}..."
             curl -s -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
               -d '{"state": "open"}' \
-              "https://api.github.com/repos/${{ github.repository }}/pulls/${{ env.EXISTING_PR_NUMBER }}"
-            echo "✅ PR #${{ env.EXISTING_PR_NUMBER }} reopened."
+              "https://api.github.com/repos/${{ github.repository }}/pulls/${{ env.PR_NUMBER }}"
+            echo "✅ PR #${{ env.PR_NUMBER }} reopened."
           else
-            echo "PR #${{ env.EXISTING_PR_NUMBER }} is already open."
+            echo "PR #${{ env.PR_NUMBER }} is already open."
           fi
-          echo "PR_NUMBER=${{ env.EXISTING_PR_NUMBER }}" >> $GITHUB_ENV
+          echo "PR_NUMBER=${{ env.PR_NUMBER }}" >> $GITHUB_ENV
 
       - name: Create PR (If Not Existing)
-        if: env.CHANGES == 'true' && env.EXISTING_PR_NUMBER == ''
+        if: env.CHANGES == 'true' && env.PR_NUMBER == ''
         run: |
           echo "CHANGES value in this step: $CHANGES"
           echo "CHANGES value in this step: ${{ env.CHANGES }}"
