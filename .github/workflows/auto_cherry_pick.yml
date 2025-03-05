@@ -301,18 +301,16 @@ jobs:
 
           if [ "$CHANGES_FOUND" = false ]; then
             echo "No changes after cherry-pick. Skipping further steps."
-            echo "CHANGES=false" >> $GITHUB_ENV
+            echo "CHANGES=false" | tee -a $GITHUB_ENV
             exit 0
           else
-            echo "CHANGES=true" >> $GITHUB_ENV
+            echo "CHANGES=true" | tee -a $GITHUB_ENV
           fi
 
-          echo "SKIPPED_COMMITS<<EOF" >> $GITHUB_ENV
-          echo -e "$SKIPPED_COMMITS" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
-
-          echo "CHANGES is set to: $CHANGES"
-          echo "CHANGES is set to: ${{ env.CHANGES }}"
+          # Debugging Output
+          echo "CHANGES_FOUND: $CHANGES_FOUND"
+          echo "CHANGES (local variable): $CHANGES"
+          echo "CHANGES (GitHub env): $(grep 'CHANGES=' $GITHUB_ENV)"
 
       - name: Set Up Node.js
         if: env.action_type == 'node' && env.CHANGES == 'true'
