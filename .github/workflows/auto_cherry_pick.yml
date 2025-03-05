@@ -248,15 +248,41 @@ jobs:
               continue
             fi
 
-            # Create a new commit via GitHub API
+            # Fetch upstream tree details
+            TREE_RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              "https://api.github.com/repos/$UPSTREAM_REPO/git/trees/$TREE_SHA?recursive=1")
+
+            # Extract tree array from response
+            TREE_ARRAY=$(echo "$TREE_RESPONSE" | jq '.tree')
+
+            # Create a new tree in the target repo
+            NEW_TREE_PAYLOAD=$(jq -n --argjson tree "$TREE_ARRAY" \
+              '{
+                "tree": $tree
+              }')
+
+            NEW_TREE_RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "$NEW_TREE_PAYLOAD" "https://api.github.com/repos/$TARGET_REPO/git/trees")
+
+            NEW_TREE_SHA=$(echo "$NEW_TREE_RESPONSE" | jq -r '.sha')
+
+            if [ -z "$NEW_TREE_SHA" ] || [ "$NEW_TREE_SHA" == "null" ]; then
+              echo "❌ Failed to create tree in target repo. Full response:"
+              echo "$NEW_TREE_RESPONSE"
+              exit 1
+            fi
+
+            # Now create a commit using the newly created tree
             PAYLOAD=$(jq -n --arg msg "$COMMIT_MESSAGE" \
-                          --arg tree "$TREE_SHA" \
-                          --arg parent "$LATEST_SHA" \
-                          '{
-                            "message": $msg,
-                            "tree": $tree,
-                            "parents": [$parent]
-                          }')
+                              --arg tree "$NEW_TREE_SHA" \
+                              --arg parent "$LATEST_SHA" \
+                              '{
+                                "message": $msg,
+                                "tree": $tree,
+                                "parents": [$parent]
+                              }')
 
             COMMIT_RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
               -H "Accept: application/vnd.github.v3+json" \
@@ -267,8 +293,7 @@ jobs:
             if [ -z "$NEW_COMMIT_SHA" ] || [ "$NEW_COMMIT_SHA" == "null" ]; then
               echo "❌ Failed to create commit via API. Full response:"
               echo "$COMMIT_RESPONSE"
-              SKIPPED_COMMITS="${SKIPPED_COMMITS}\n$COMMIT_HASH"
-              continue
+              exit 1
             fi
 
             # Update branch reference
