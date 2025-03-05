@@ -312,6 +312,8 @@ jobs:
           echo "CHANGES (local variable): $CHANGES"
           echo "CHANGES (GitHub env): $(grep 'CHANGES=' $GITHUB_ENV)"
           echo "CHANGES=${{ env.CHANGES }}"
+          echo "action_type=${{ env.action_type }}"
+          echo "EXISTING_PR_NUMBER=${{ env.EXISTING_PR_NUMBER }}"
           
 
       - name: Set Up Node.js
@@ -334,6 +336,7 @@ jobs:
           fi
         env:
           CHANGES: ${{ env.CHANGES }}  # ✅ Explicitly pass CHANGES
+          
 
 
       - name: Authenticate npm with GitHub Packages (if using private packages)
