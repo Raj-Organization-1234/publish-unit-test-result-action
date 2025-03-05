@@ -348,11 +348,39 @@ jobs:
         run: |
           eval "${{ inputs.script }}" || echo "No build script found or failed, skipping."
           git add .
+
           if git diff --cached --exit-code; then
-            echo "No additional changes from build process."
+            echo "No changes detected."
           else
-            git commit -m "chore: update build artifacts"
-          fi
+            echo "Committing changes via GitHub API..."
+            FILES_CHANGED=$(git status --porcelain | awk '{print $2}')
+            for file in $FILES_CHANGED; do
+              echo "Processing file: $file"
+
+              CONTENT=$(base64 -w 0 "$file")
+
+              SHA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                "https://api.github.com/repos/${{ github.repository }}/contents/$file?ref=${{ env.BRANCH_NAME }}" | jq -r .sha)
+              if [ "$SHA" == "null" ]; then SHA=""; fi
+
+              # Prepare commit payload
+              JSON_PAYLOAD=$(mktemp)
+              echo "{
+                \"message\": \"fix: apply audit fixes\",
+                \"content\": \"$CONTENT\",
+                \"branch\": \"${{ env.BRANCH_NAME }}\",
+                \"sha\": \"$SHA\"
+              }" > "$JSON_PAYLOAD"
+
+              curl -s -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+                -H "Accept: application/vnd.github.v3+json" \
+                --data-binary @"$JSON_PAYLOAD" \
+                "https://api.github.com/repos/${{ github.repository }}/contents/$file"
+
+              echo "✅ File committed: $file"
+            done
+
+            echo "✅ All changes committed successfully."
       
       - name: Reopen PR If It Was Closed
         if: env.CHANGES == 'true' && env.PR_NUMBER != ''
@@ -408,11 +436,14 @@ jobs:
       - name: Comment on PR with Updates (Single Comment Per PR)
         if: env.PR_NUMBER != ''
         run: |
-          echo "Checking for existing bot comment on PR #${{ env.PR_NUMBER }}"
+          echo "🔍 Checking for existing bot comment on PR #${{ env.PR_NUMBER }}"
+
           {
             echo "🚀 PR Updated!"
             echo ""
             echo "The PR has been updated with the latest cherry-picked commits."
+            echo ""
+            echo "@${{ github.repository_owner }}/maintained-actions-dev Please review and approve the changes."
             echo ""
             if [ -n "${{ env.SKIPPED_COMMITS }}" ]; then
               echo "⚠️ Skipped Commits Due to Conflicts:"
@@ -439,19 +470,9 @@ jobs:
               -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
               "https://api.github.com/repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID"
           else
-            echo "No existing comment found. Creating a new comment."
+            echo "📝 Creating a new comment on PR #${{ env.PR_NUMBER }}"
             curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
               -H "Accept: application/vnd.github.v3+json" \
               -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
               "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
           fi
-
-      - name: Request Review
-        if: env.PR_NUMBER != ''
-        run: |
-          curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d '{
-              "team_reviewers": ["maintained-actions-dev"]
-            }' \
-            "https://api.github.com/repos/${{ github.repository }}/pulls/${{ env.PR_NUMBER }}/requested_reviewers"
