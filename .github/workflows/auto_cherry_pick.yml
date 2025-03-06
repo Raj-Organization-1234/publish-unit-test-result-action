@@ -86,7 +86,7 @@ jobs:
           GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
           ISSUE_TITLE="Tracking Last Sync Date"
           LABEL="sync-tracking"
-          
+
           SYNC_DATE_LAST_MONTH=$(date -u --date='-1 month' +'%Y-%m-%dT%H:%M:%SZ')
 
           ISSUE_RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
@@ -111,7 +111,16 @@ jobs:
               -d "{\"title\": \"$ISSUE_TITLE\", \"body\": \"Last Sync Date: $SYNC_DATE_LAST_MONTH\", \"labels\": [\"$LABEL\"]}" \
               "https://api.github.com/repos/$REPO/issues")
 
+            echo "Issue creation response: $CREATE_RESPONSE"  # Debug log
+
             ISSUE_NUMBER=$(echo "$CREATE_RESPONSE" | jq -r '.number')
+
+            if [ -z "$ISSUE_NUMBER" ] || [ "$ISSUE_NUMBER" == "null" ]; then
+              echo "❌ Failed to create issue. Full API response:"
+              echo "$CREATE_RESPONSE"
+              exit 1
+            fi
+
             LAST_SYNC_DATE=$SYNC_DATE_LAST_MONTH
             echo "✅ Created new tracking issue #$ISSUE_NUMBER"
           fi
