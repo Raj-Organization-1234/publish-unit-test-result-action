@@ -418,7 +418,6 @@ jobs:
           fi
 
       - name: Update Last Sync Date via API
-        if: env.PR_NUMBER != ''
         run: |
           REPO="${{ github.repository }}"
           GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
