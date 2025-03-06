@@ -80,53 +80,44 @@ jobs:
           echo "DEFAULT_BRANCH=$DEFAULT_BRANCH" >> $GITHUB_ENV
 
       - name: Get or Create Last Sync Date via API
-        id: last_sync
+        id: sync-date
         run: |
-          FILE_PATH=".github/upstream_sync.txt"
           REPO="${{ github.repository }}"
-          BRANCH="${{ inputs.base_branch }}"
-          GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          ISSUE_TITLE="Tracking Last Sync Date"
+          LABEL="sync-tracking"
+          
+          SYNC_DATE_LAST_MONTH=$(date -u --date='-1 month' +'%Y-%m-%dT%H:%M:%SZ')
 
-          API_URL="https://api.github.com/repos/$REPO/contents/$FILE_PATH?ref=$BRANCH"
-          RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" "$API_URL")
+          ISSUE_RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
+            "https://api.github.com/repos/$REPO/issues?state=open&labels=$LABEL")
 
-          FILE_SHA=$(echo "$RESPONSE" | jq -r '.sha')
-          FILE_CONTENT=$(echo "$RESPONSE" | jq -r '.content' | base64 --decode 2>/dev/null || echo "")
+          ISSUE_NUMBER=$(echo "$ISSUE_RESPONSE" | jq -r '.[] | select(.title=="'"$ISSUE_TITLE"'") | .number')
+          LAST_SYNC_DATE=""
 
-          if [[ "$FILE_SHA" == "null" || -z "$FILE_SHA" ]]; then
-            LAST_SYNC_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
-            echo "⚠️ No sync date file found. Creating it with today's date: $LAST_SYNC_DATE"
+          if [ -n "$ISSUE_NUMBER" ] && [ "$ISSUE_NUMBER" != "null" ]; then
+            echo "✅ Found existing sync tracking issue #$ISSUE_NUMBER."
 
-            PAYLOAD=$(jq -n \
-              --arg msg "chore: initialize upstream sync date" \
-              --arg content "$(echo -n "$LAST_SYNC_DATE" | base64 -w 0)" \
-              --arg branch "$BRANCH" \
-              '{
-                "message": $msg,
-                "content": $content,
-                "branch": $branch
-              }')
+            LAST_SYNC_DATE=$(curl -s -H "Authorization: token $GH_TOKEN" \
+              "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER" | jq -r '.body' | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z')
 
-            API_CREATE_URL="https://api.github.com/repos/$REPO/contents/$FILE_PATH"
-            CREATE_RESPONSE=$(curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
-                                        -H "Accept: application/vnd.github.v3+json" \
-                                        -d "$PAYLOAD" "$API_CREATE_URL")
+            echo "📌 Last Sync Date from issue: $LAST_SYNC_DATE"
 
-            if echo "$CREATE_RESPONSE" | jq -e .content > /dev/null; then
-              echo "✅ Successfully created last sync date file."
-            else
-              echo "❌ Failed to create file. Response:"
-              echo "$CREATE_RESPONSE"
-              exit 1
-            fi
           else
-            LAST_SYNC_DATE="$FILE_CONTENT"
-            echo "✅ Found existing last sync date: $LAST_SYNC_DATE"
+            echo "⚠️ No tracking issue found. Creating a new one with default sync date ($SYNC_DATE_LAST_MONTH)..."
+
+            CREATE_RESPONSE=$(curl -s -X POST -H "Authorization: token $GH_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              -d "{\"title\": \"$ISSUE_TITLE\", \"body\": \"Last Sync Date: $SYNC_DATE_LAST_MONTH\", \"labels\": [\"$LABEL\"]}" \
+              "https://api.github.com/repos/$REPO/issues")
+
+            ISSUE_NUMBER=$(echo "$CREATE_RESPONSE" | jq -r '.number')
+            LAST_SYNC_DATE=$SYNC_DATE_LAST_MONTH
+            echo "✅ Created new tracking issue #$ISSUE_NUMBER"
           fi
 
           echo "LAST_SYNC_DATE=$LAST_SYNC_DATE" >> $GITHUB_ENV
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          echo "ISSUE_NUMBER=$ISSUE_NUMBER" >> $GITHUB_ENV
 
       - name: Get New Commits from Upstream
         run: |
@@ -426,49 +417,25 @@ jobs:
             echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
           fi
 
-
       - name: Update Last Sync Date via API
+        if: env.PR_NUMBER != ''
         run: |
-          FILE_PATH=".github/upstream_sync.txt"
           REPO="${{ github.repository }}"
-          BRANCH="${{ inputs.base_branch }}"
           GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          ISSUE_NUMBER="${{ env.ISSUE_NUMBER }}"
           SYNC_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 
-          # Fetch existing file SHA (if exists)
-          API_URL="https://api.github.com/repos/$REPO/contents/$FILE_PATH?ref=$BRANCH"
-          RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" -H "Accept: application/vnd.github.v3+json" "$API_URL")
-
-          FILE_SHA=$(echo "$RESPONSE" | jq -r '.sha')
-          if [[ "$FILE_SHA" == "null" || -z "$FILE_SHA" ]]; then FILE_SHA=""; fi
-
-          # Prepare payload for update
-          PAYLOAD=$(jq -n \
-            --arg msg "chore: update last sync date to $SYNC_DATE" \
-            --arg content "$(echo -n "$SYNC_DATE" | base64 -w 0)" \
-            --arg branch "$BRANCH" \
-            --arg sha "$FILE_SHA" \
-            '{
-              "message": $msg,
-              "content": $content,
-              "branch": $branch,
-              "sha": $sha
-            }')
-
-          # Commit update via API
-          API_UPDATE_URL="https://api.github.com/repos/$REPO/contents/$FILE_PATH"
-          UPDATE_RESPONSE=$(curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d "$PAYLOAD" "$API_UPDATE_URL")
-
-          if echo "$UPDATE_RESPONSE" | jq -e .content > /dev/null; then
-            echo "✅ Last sync date updated successfully: $SYNC_DATE"
-          else
-            echo "❌ Failed to update last sync date. API Response:"
-            echo "$UPDATE_RESPONSE"
+          if [ -z "$ISSUE_NUMBER" ]; then
+            echo "❌ Error: No issue number found. Cannot update sync date."
             exit 1
           fi
 
+          UPDATE_RESPONSE=$(curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            -d "{\"body\": \"Last Sync Date: $SYNC_DATE\"}" \
+            "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER")
+
+          echo "✅ Updated issue #$ISSUE_NUMBER with new sync date: $SYNC_DATE"
 
       - name: Comment on PR with Updates (Single Comment Per PR)
         if: env.PR_NUMBER != ''
