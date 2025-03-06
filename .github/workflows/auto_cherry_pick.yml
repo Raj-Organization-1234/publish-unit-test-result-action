@@ -3,14 +3,6 @@ name: Auto Cherry-Pick from Upstream
 on:
   workflow_dispatch:
     inputs:
-      original-owner:
-        description: "Owner of the original repository"
-        required: true
-        type: string
-      repo-name:
-        description: "Repository name to sync from"
-        required: true
-        type: string
       base_branch:
         description: "Base branch to create the PR against"
         required: true
