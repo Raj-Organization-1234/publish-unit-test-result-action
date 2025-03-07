@@ -153,38 +153,43 @@ jobs:
             echo "PR_NUMBER=$EXISTING_PR_NUMBER" >> $GITHUB_ENV
           fi
 
-      - name: Reset & Update PR Branch Using API
+      - name: Reset & Update PR Branch Using gh CLI
         run: |
-          echo "🔍 Checking if branch ${{ env.BRANCH_NAME }} exists..."
+          REPO="${{ github.repository }}"
+          BRANCH_NAME="${{ env.BRANCH_NAME }}"
+          BASE_BRANCH="${{ inputs.base_branch }}"
 
-          BRANCH_RESPONSE=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/git/refs/heads/${{ env.BRANCH_NAME }}")
+          echo "🔍 Checking if branch $BRANCH_NAME exists..."
 
-          BRANCH_EXISTS=$(echo "$BRANCH_RESPONSE" | jq -r '.ref // empty')
+          if gh api "repos/$REPO/git/ref/heads/$BRANCH_NAME" --silent > /dev/null 2>&1; then
+            echo "✅ Branch $BRANCH_NAME exists."
 
-          BASE_COMMIT_SHA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            "https://api.github.com/repos/${{ github.repository }}/git/refs/heads/${{ inputs.base_branch }}" | jq -r '.object.sha')
-
-          if [[ -n "$BRANCH_EXISTS" ]]; then
             if [[ -n "${{ env.NEW_COMMITS }}" ]]; then
-              echo "🔄 New commits found. Resetting branch ${{ env.BRANCH_NAME }} to match ${{ inputs.base_branch }}"
-              curl -s -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                -H "Accept: application/vnd.github.v3+json" \
-                -d "{\"sha\": \"$BASE_COMMIT_SHA\", \"force\": true}" \
-                "https://api.github.com/repos/${{ github.repository }}/git/refs/heads/${{ env.BRANCH_NAME }}"
-              echo "✅ Branch ${{ env.BRANCH_NAME }} reset successfully."
+              echo "🔄 New commits found. Resetting branch $BRANCH_NAME to match $BASE_BRANCH"
+              
+              BASE_COMMIT_SHA=$(gh api "repos/$REPO/git/ref/heads/$BASE_BRANCH" --jq '.object.sha')
+
+              gh api --method PATCH "repos/$REPO/git/refs/heads/$BRANCH_NAME" \
+                -F sha="$BASE_COMMIT_SHA" \
+                -F force=true
+
+              echo "✅ Branch $BRANCH_NAME reset successfully."
             else
               echo "⚠️ No new commits to cherry-pick. Skipping branch reset."
             fi
 
           else
-            echo "🆕 Branch ${{ env.BRANCH_NAME }} does not exist. Creating from ${{ inputs.base_branch }}..."
-            curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              -d "{\"ref\": \"refs/heads/${{ env.BRANCH_NAME }}\", \"sha\": \"$BASE_COMMIT_SHA\"}" \
-              "https://api.github.com/repos/${{ github.repository }}/git/refs"
-            echo "✅ New branch ${{ env.BRANCH_NAME }} created successfully."
+            echo "🆕 Branch $BRANCH_NAME does not exist. Creating from $BASE_BRANCH..."
+
+            BASE_COMMIT_SHA=$(gh api "repos/$REPO/git/ref/heads/$BASE_BRANCH" --jq '.object.sha')
+
+            gh api --method POST "repos/$REPO/git/refs" \
+              -F ref="refs/heads/$BRANCH_NAME" \
+              -F sha="$BASE_COMMIT_SHA"
+
+            echo "✅ New branch $BRANCH_NAME created successfully."
           fi
+
 
       - name: Cherry-Pick Changes via API
         run: |
