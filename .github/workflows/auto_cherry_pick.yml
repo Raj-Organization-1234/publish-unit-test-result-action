@@ -190,15 +190,13 @@ jobs:
             echo "✅ New branch $BRANCH_NAME created successfully."
           fi
 
-
-      - name: Cherry-Pick Changes via API
+      - name: Cherry-Pick Changes via gh CLI
         run: |
           UPSTREAM_REPO="${{ inputs.original-owner }}/${{ inputs.repo-name }}"
           TARGET_REPO="${{ github.repository }}"
           BRANCH="${{ env.BRANCH_NAME }}"
-          GH_TOKEN=${{ secrets.GITHUB_TOKEN }}
 
-          echo "🚀 Starting API-based cherry-picking from $UPSTREAM_REPO to $TARGET_REPO on branch: $BRANCH"
+          echo "🚀 Starting cherry-picking from $UPSTREAM_REPO to $TARGET_REPO on branch: $BRANCH"
 
           SKIPPED_COMMITS=""
           CHANGES_FOUND=false
@@ -207,8 +205,7 @@ jobs:
             echo "Processing commit: $COMMIT_HASH"
 
             # Fetch commit details
-            COMMIT_DETAILS=$(curl -s -H "Authorization: token $GH_TOKEN" \
-              "https://api.github.com/repos/$UPSTREAM_REPO/commits/$COMMIT_HASH")
+            COMMIT_DETAILS=$(gh api "repos/$UPSTREAM_REPO/commits/$COMMIT_HASH")
 
             COMMIT_MESSAGE=$(echo "$COMMIT_DETAILS" | jq -r '.commit.message')
 
@@ -231,8 +228,7 @@ jobs:
             for file in $FILTERED_FILES; do
                 echo "Processing file: $file"
 
-                FILE_RESPONSE=$(curl -s -H "Authorization: token $GH_TOKEN" \
-                    "https://api.github.com/repos/$TARGET_REPO/contents/$file?ref=$BRANCH")
+                FILE_RESPONSE=$(gh api "repos/$TARGET_REPO/contents/$file?ref=$BRANCH")
 
                 BASE64_CONTENT=$(echo "$FILE_RESPONSE" | jq -r '.content' | base64 --decode)
 
@@ -274,10 +270,9 @@ jobs:
                       "sha": $sha
                     }')
 
-                RESPONSE=$(curl -s -X PUT -H "Authorization: token $GH_TOKEN" \
+                RESPONSE=$(gh api --method PUT "repos/$TARGET_REPO/contents/$file" \
                     -H "Accept: application/vnd.github.v3+json" \
-                    --data-binary "$COMMIT_PAYLOAD" \
-                    "https://api.github.com/repos/$TARGET_REPO/contents/$file")
+                    --input - <<< "$COMMIT_PAYLOAD")
 
                 if echo "$RESPONSE" | jq -e '.content' > /dev/null; then
                   echo "✅ Applied patch and updated file: $file"
