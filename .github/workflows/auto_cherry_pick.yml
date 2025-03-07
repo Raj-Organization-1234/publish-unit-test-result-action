@@ -204,6 +204,11 @@ jobs:
           while read -r COMMIT_HASH; do
             echo "Processing commit: $COMMIT_HASH"
 
+            if [ -z "$COMMIT_HASH" ]; then
+              echo "⚠️ Skipping empty commit hash."
+              continue
+            fi
+
             # Fetch commit details
             COMMIT_DETAILS=$(gh api "repos/$UPSTREAM_REPO/commits/$COMMIT_HASH")
 
