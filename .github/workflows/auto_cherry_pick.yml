@@ -425,10 +425,9 @@ jobs:
             echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
           fi
 
-      - name: Update Last Sync Date via API
+      - name: Update Last Sync Date via gh CLI
         run: |
           REPO="${{ github.repository }}"
-          GH_TOKEN="${{ secrets.GITHUB_TOKEN }}"
           ISSUE_NUMBER="${{ env.ISSUE_NUMBER }}"
           SYNC_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
 
@@ -437,17 +436,17 @@ jobs:
             exit 1
           fi
 
-          UPDATE_RESPONSE=$(curl -s -X PATCH -H "Authorization: token $GH_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d "{\"body\": \"Last Sync Date: $SYNC_DATE\"}" \
-            "https://api.github.com/repos/$REPO/issues/$ISSUE_NUMBER")
-
+          gh issue edit "$ISSUE_NUMBER" --repo "$REPO" --body "Last Sync Date: $SYNC_DATE"
           echo "✅ Updated issue #$ISSUE_NUMBER with new sync date: $SYNC_DATE"
 
-      - name: Comment on PR with Updates (Single Comment Per PR)
+      - name: Comment on PR with Updates via gh CLI
         if: env.PR_NUMBER != ''
         run: |
           echo "🔍 Checking for existing bot comment on PR #${{ env.PR_NUMBER }}"
+
+          REPO="${{ github.repository }}"
+          PR_NUMBER="${{ env.PR_NUMBER }}"
+          COMMENT_BODY=$(mktemp)
 
           {
             echo "🚀 PR Updated!"
@@ -463,22 +462,15 @@ jobs:
               done <<< "${{ env.SKIPPED_COMMITS }}"
               echo ""
             fi
-          } > comment_body.txt
-          COMMENT_BODY_ESCAPED=$(jq -Rs . < comment_body.txt)
-          EXISTING_COMMENT_ID=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments" | 
-            jq -r '.[] | select(.body | contains("🚀 PR Updated!")) | .id')
+          } > "$COMMENT_BODY"
+
+          EXISTING_COMMENT_ID=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments" --jq '.[] | select(.body | contains("🚀 PR Updated!")) | .id')
+
           if [ -n "$EXISTING_COMMENT_ID" ]; then
             echo "Updating existing comment: $EXISTING_COMMENT_ID"
-            curl -s -X PATCH -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/comments/$EXISTING_COMMENT_ID"
+            gh api --method PATCH "repos/$REPO/issues/comments/$EXISTING_COMMENT_ID" \
+              -F body="@$COMMENT_BODY"
           else
-            echo "📝 Creating a new comment on PR #${{ env.PR_NUMBER }}"
-            curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-              -H "Accept: application/vnd.github.v3+json" \
-              -d "{\"body\": $COMMENT_BODY_ESCAPED}" \
-              "https://api.github.com/repos/${{ github.repository }}/issues/${{ env.PR_NUMBER }}/comments"
+            echo "📝 Creating a new comment on PR #$PR_NUMBER"
+            gh pr comment "$PR_NUMBER" --repo "$REPO" --body-file "$COMMENT_BODY"
           fi
