@@ -404,15 +404,18 @@ jobs:
         run: |
           echo "No existing PR found. Creating new PR..."
           
-          PR_TITLE="chore: Cherry-picked changes from upstream"          
+          PR_TITLE="chore: Cherry-picked changes from upstream"
+          BASE_BRANCH="${{ inputs.base_branch }}"
+          BRANCH_NAME="${{ env.BRANCH_NAME }}"
+
           PR_RESPONSE=$(gh pr create --repo "${{ github.repository }}" \
             --title "$PR_TITLE" \
-            --head "${{ env.BRANCH_NAME }}" \
-            --base "${{ inputs.base_branch }}" \
-            --fill)
+            --head "$BRANCH_NAME" \
+            --base "$BASE_BRANCH" \
+            --body "Cherry-picked changes from upstream.")
 
-          PR_NUMBER=$(gh pr view --repo "${{ github.repository }}" --json number --jq '.number')
-          PR_URL=$(gh pr view --repo "${{ github.repository }}" --json url --jq '.url')
+          PR_NUMBER=$(gh pr view "$BRANCH_NAME" --repo "${{ github.repository }}" --json number --jq '.number')
+          PR_URL=$(gh pr view "$BRANCH_NAME" --repo "${{ github.repository }}" --json url --jq '.url')
 
           if [[ -z "$PR_URL" || "$PR_URL" == "null" ]]; then
             echo "❌ Error: PR creation failed."
