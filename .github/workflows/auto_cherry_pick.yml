@@ -372,7 +372,7 @@ jobs:
 
           echo "Initial PR state: $PR_STATE"
 
-          if [[ "$PR_STATE" == "open" ]]; then
+          if [[ "$PR_STATE" == "OPEN" ]]; then
             echo "🔄 PR state is 'open', waiting 5 seconds and rechecking..."
             sleep 5
 
@@ -380,7 +380,7 @@ jobs:
             echo "Updated PR state: $PR_STATE"
           fi
 
-          if [[ "$PR_STATE" == "open" ]]; then
+          if [[ "$PR_STATE" == "OPEN" ]]; then
             echo "⚠️ PR #$PR_NUMBER is unexpectedly open. Closing it now..."
             gh api --method PATCH "repos/$REPO/pulls/$PR_NUMBER" -F state="closed"
             echo "✅ PR #$PR_NUMBER force-closed."
@@ -389,7 +389,7 @@ jobs:
             PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json state --jq '.state')
           fi
 
-          if [[ "$PR_STATE" == "closed" ]]; then
+          if [[ "$PR_STATE" == "CLOSED" ]]; then
             echo "🔄 Reopening closed PR #$PR_NUMBER..."
             gh pr reopen "$PR_NUMBER" --repo "$REPO"
             echo "✅ PR #$PR_NUMBER reopened."
