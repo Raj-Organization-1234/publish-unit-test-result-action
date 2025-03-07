@@ -326,7 +326,7 @@ jobs:
             yarn install --frozen-lockfile
           fi
 
-      - name: Run Specified Build Script and Commit Changes via API
+      - name: Run Specified Build Script and Commit Changes via gh CLI
         if: env.action_type == 'node' && env.CHANGES == 'true'
         run: |
           eval "${{ inputs.script }}" || echo "No build script found or failed, skipping."
@@ -336,53 +336,39 @@ jobs:
           if [ -z "$FILES_CHANGED" ]; then
             echo "No changes detected."
           else
-            echo "Committing changes via GitHub API..."
+            echo "Committing changes via GitHub CLI..."
 
             for file in $FILES_CHANGED; do
               echo "Processing file: $file"
 
               CONTENT=$(base64 -w 0 "$file")
 
-              SHA=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-                "https://api.github.com/repos/${{ github.repository }}/contents/$file?ref=${{ env.BRANCH_NAME }}" | jq -r .sha)
+              SHA=$(gh api "repos/${{ github.repository }}/contents/$file?ref=${{ env.BRANCH_NAME }}" --jq .sha)
               if [ "$SHA" == "null" ]; then SHA=""; fi
 
-              # Prepare commit payload
-              JSON_PAYLOAD=$(mktemp)
-              echo "{
-                \"message\": \"fix: apply audit fixes\",
-                \"content\": \"$CONTENT\",
-                \"branch\": \"${{ env.BRANCH_NAME }}\",
-                \"sha\": \"$SHA\"
-              }" > "$JSON_PAYLOAD"
-
-              COMMIT_RESPONSE=$(curl -s -X PUT -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+              # Commit the file using gh API
+              gh api --method PUT "repos/${{ github.repository }}/contents/$file" \
                 -H "Accept: application/vnd.github.v3+json" \
-                --data-binary @"$JSON_PAYLOAD" \
-                "https://api.github.com/repos/${{ github.repository }}/contents/$file")
-              
-              if echo "$COMMIT_RESPONSE" | jq -e '.content' > /dev/null; then
-                echo "✅ File committed: $file"
-              else
-                echo "❌ Failed to commit changes for $file. Full response:"
-                echo "$COMMIT_RESPONSE"
-              fi
+                -F message="fix: apply audit fixes" \
+                -F content="$CONTENT" \
+                -F branch="${{ env.BRANCH_NAME }}" \
+                -F sha="$SHA" \
+                --silent
+
+              echo "✅ File committed: $file"
             done
 
             echo "✅ All changes committed successfully."
           fi
 
-
-      - name: Reopen PR If It Was Closed
+      - name: Reopen PR If It Was Closed via gh CLI
         if: env.CHANGES == 'true' && env.PR_NUMBER != ''
         run: |
           REPO="${{ github.repository }}"
-          TOKEN="${{ secrets.GITHUB_TOKEN }}"
           PR_NUMBER="${{ env.PR_NUMBER }}"
 
           echo "Checking PR #$PR_NUMBER state..."
-          PR_STATE=$(curl -s -H "Authorization: token $TOKEN" \
-            "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" | jq -r '.state')
+          PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json state --jq '.state')
 
           echo "Initial PR state: $PR_STATE"
 
@@ -390,33 +376,22 @@ jobs:
             echo "🔄 PR state is 'open', waiting 5 seconds and rechecking..."
             sleep 5
 
-            PR_STATE=$(curl -s -H "Authorization: token $TOKEN" \
-              "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" | jq -r '.state')
-
+            PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json state --jq '.state')
             echo "Updated PR state: $PR_STATE"
           fi
 
           if [[ "$PR_STATE" == "open" ]]; then
             echo "⚠️ PR #$PR_NUMBER is unexpectedly open. Closing it now..."
-            curl -s -X PATCH -H "Authorization: token $TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              -d '{"state": "closed"}' \
-              "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER"
-
+            gh api --method PATCH "repos/$REPO/pulls/$PR_NUMBER" -F state="closed"
             echo "✅ PR #$PR_NUMBER force-closed."
             sleep 5  # Give GitHub time to register the state change
 
-            PR_STATE=$(curl -s -H "Authorization: token $TOKEN" \
-              "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER" | jq -r '.state')
+            PR_STATE=$(gh pr view "$PR_NUMBER" --repo "$REPO" --json state --jq '.state')
           fi
 
           if [[ "$PR_STATE" == "closed" ]]; then
             echo "🔄 Reopening closed PR #$PR_NUMBER..."
-            curl -s -X PATCH -H "Authorization: token $TOKEN" \
-              -H "Accept: application/vnd.github.v3+json" \
-              -d '{"state": "open"}' \
-              "https://api.github.com/repos/$REPO/pulls/$PR_NUMBER"
-
+            gh pr reopen "$PR_NUMBER" --repo "$REPO"
             echo "✅ PR #$PR_NUMBER reopened."
           else
             echo "⚠️ PR #$PR_NUMBER is still open, skipping reopening."
@@ -424,23 +399,23 @@ jobs:
 
           echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_ENV
 
-      - name: Create PR (If Not Existing)
+      - name: Create PR (If Not Existing) via gh CLI
         if: env.CHANGES == 'true' && env.PR_NUMBER == ''
         run: |
           echo "No existing PR found. Creating new PR..."
           
           PR_TITLE="chore: Cherry-picked changes from upstream"          
-          PR_RESPONSE=$(curl -s -X POST -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github.v3+json" \
-            -d "{ \"title\": \"$PR_TITLE\", \"head\": \"${{ env.BRANCH_NAME }}\", \"base\": \"${{ inputs.base_branch }}\", \"draft\": false }" \
-            "https://api.github.com/repos/${{ github.repository }}/pulls")
+          PR_RESPONSE=$(gh pr create --repo "${{ github.repository }}" \
+            --title "$PR_TITLE" \
+            --head "${{ env.BRANCH_NAME }}" \
+            --base "${{ inputs.base_branch }}" \
+            --fill)
 
-          PR_NUMBER=$(echo "$PR_RESPONSE" | jq -r '.number')
-          PR_URL=$(echo "$PR_RESPONSE" | jq -r '.html_url')
+          PR_NUMBER=$(gh pr view --repo "${{ github.repository }}" --json number --jq '.number')
+          PR_URL=$(gh pr view --repo "${{ github.repository }}" --json url --jq '.url')
 
-          if [[ "$PR_URL" == "null" || -z "$PR_URL" ]]; then
-            echo "❌ Error: PR creation failed. Full API response:"
-            echo "$PR_RESPONSE"
+          if [[ -z "$PR_URL" || "$PR_URL" == "null" ]]; then
+            echo "❌ Error: PR creation failed."
             exit 1
           else
             echo "✅ Pull Request created: $PR_URL"
