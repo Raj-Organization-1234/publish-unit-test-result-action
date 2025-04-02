@@ -11,7 +11,16 @@ permissions:
   contents: read
 
 jobs:
+  verify-secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify caller repo secrets
+        run: |
+          echo "Caller APP_ID: ${{ secrets.APP_ID != '' && '✅ Present' || '❌ Missing' }}"
+          echo "Caller PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY != '' && '✅ Present' || '❌ Missing' }}"
+
   release:
+    needs: verify-secrets
     permissions:
       actions: read
       id-token: write
