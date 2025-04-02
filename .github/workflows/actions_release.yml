@@ -16,8 +16,12 @@ jobs:
       actions: read
       id-token: write
       contents: write
-    uses: step-security/reusable-workflows/.github/workflows/actions_release.yaml@fix_Action_Release-WF 
+
+    uses: step-security/reusable-workflows/.github/workflows/actions_release.yaml@fix_Action_Release-WF
+
     with:
       tag: "${{ github.event.inputs.tag }}"
+
+    secrets:
       app_id: ${{ secrets.APP_ID }}
       private_key: ${{ secrets.APP_PRIVATE_KEY }}
