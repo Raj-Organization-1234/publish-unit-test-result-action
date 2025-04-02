@@ -11,26 +11,15 @@ permissions:
   contents: read
 
 jobs:
-  verify-secrets:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Verify caller repo secrets
-        run: |
-          echo "Caller APP_ID: ${{ secrets.APP_ID != '' && '✅ Present' || '❌ Missing' }}"
-          echo "Caller PRIVATE_KEY: ${{ secrets.APP_PRIVATE_KEY != '' && '✅ Present' || '❌ Missing' }}"
-
   release:
-    needs: verify-secrets
     permissions:
       actions: read
       id-token: write
       contents: write
 
     uses: step-security/reusable-workflows/.github/workflows/actions_release.yaml@fix_Action_Release-WF
-
     with:
       tag: "${{ github.event.inputs.tag }}"
-
     secrets:
       app_id: ${{ secrets.APP_ID }}
       private_key: ${{ secrets.APP_PRIVATE_KEY }}
