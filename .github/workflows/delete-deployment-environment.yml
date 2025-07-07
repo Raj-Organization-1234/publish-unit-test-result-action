@@ -103,20 +103,32 @@ jobs:
           environment: ${{ env.ENVIRONMENT }}
           onlyDeactivateDeployments: true
 
-      - name: 🧪 Verify deployments are inactive
+      - name: 🧪 Verify deployments are marked inactive
         run: |
           deployments=$(curl -s \
             -H "Authorization: token ${{ env.REPO_ACCESS_TOKEN }}" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${{ github.repository }}/deployments?environment=${{ env.ENVIRONMENT }}")
-
-          inactive_count=$(echo "$deployments" | jq '[.[] | select(.inactive_at != null)] | length')
+      
           total=$(echo "$deployments" | jq 'length')
-
+          inactive_count=0
+      
+          for id in $(echo "$deployments" | jq -r '.[].id'); do
+            status=$(curl -s \
+              -H "Authorization: token ${{ env.REPO_ACCESS_TOKEN }}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${{ github.repository }}/deployments/$id/statuses" | jq -r '.[0].state')
+      
+            if [ "$status" == "inactive" ]; then
+              inactive_count=$((inactive_count + 1))
+            fi
+          done
+      
+          echo "Inactive deployments: $inactive_count / $total"
           if [ "$inactive_count" -eq "$total" ]; then
-            echo "✅ All deployments are inactive"
+            echo "✅ All deployments are marked as inactive"
           else
-            echo "❌ $((total - inactive_count)) deployments are still active"
+            echo "❌ Some deployments are not inactive"
             exit 1
           fi
 
