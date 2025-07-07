@@ -1,0 +1,123 @@
+name: delete-deployment-environment
+
+on:
+  workflow_dispatch:
+    inputs:
+      action-tag:
+        description: 'Branch or tag to test'
+        required: true
+        default: 'main'
+
+env:
+  ENVIRONMENT: test
+  REF: delete-deployment-environment
+  REPO_ACCESS_TOKEN: ${{ secrets.REPO_ACCESS_TOKEN }}
+  GH_APP_ID: ${{ secrets.GH_APP_ID }}
+  GH_APP_PRIVATE_KEY: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+jobs:
+  full-cleanup:
+    name: 🧼 Full Cleanup - Delete Deployments & Environment
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create deployment
+        uses: chrnorm/deployment-action@v2
+        with:
+          token: ${{ env.REPO_ACCESS_TOKEN }}
+          environment: ${{ env.ENVIRONMENT }}
+          ref: ${{ env.REF }}
+          initial-status: success
+
+      - name: Delete deployments & environment
+        uses: Raj-Organization-1234/delete-deployment-environment@release
+        with:
+          token: ${{ env.REPO_ACCESS_TOKEN }}
+          environment: ${{ env.ENVIRONMENT }}
+
+  only-remove:
+    name: 🗑️ Only Remove Deployments
+    needs: full-cleanup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create deployment
+        uses: chrnorm/deployment-action@v2
+        with:
+          token: ${{ env.REPO_ACCESS_TOKEN }}
+          environment: ${{ env.ENVIRONMENT }}
+          ref: ${{ env.REF }}
+          initial-status: success
+
+      - name: Remove deployments only
+        uses: Raj-Organization-1234/delete-deployment-environment@release
+        with:
+          token: ${{ env.REPO_ACCESS_TOKEN }}
+          environment: ${{ env.ENVIRONMENT }}
+          onlyRemoveDeployments: true
+
+  only-deactivate:
+    name: 🔕 Only Deactivate Deployments
+    needs: only-remove
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create deployment
+        uses: chrnorm/deployment-action@v2
+        with:
+          token: ${{ env.REPO_ACCESS_TOKEN }}
+          environment: ${{ env.ENVIRONMENT }}
+          ref: ${{ env.REF }}
+          initial-status: success
+
+      - name: Deactivate deployments only
+        uses: Raj-Organization-1234/delete-deployment-environment@release
+        with:
+          token: ${{ env.REPO_ACCESS_TOKEN }}
+          environment: ${{ env.ENVIRONMENT }}
+          onlyDeactivateDeployments: true
+
+  ref-only:
+    name: 🎯 Delete Deployments by Ref Only
+    needs: only-deactivate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create deployment
+        uses: chrnorm/deployment-action@v2
+        with:
+          token: ${{ env.REPO_ACCESS_TOKEN }}
+          environment: ${{ env.ENVIRONMENT }}
+          ref: ${{ env.REF }}
+          initial-status: success
+
+      - name: Remove deployments for a specific ref
+        uses: Raj-Organization-1234/delete-deployment-environment@release
+        with:
+          token: ${{ env.REPO_ACCESS_TOKEN }}
+          environment: ${{ env.ENVIRONMENT }}
+          ref: ${{ env.REF }}
+          onlyRemoveDeployments: true
+
+  github-app-cleanup:
+    name: 🛡️ Cleanup Using GitHub App Token
+    needs: ref-only
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create deployment
+        uses: chrnorm/deployment-action@v2
+        with:
+          token: ${{ env.REPO_ACCESS_TOKEN }}
+          environment: ${{ env.ENVIRONMENT }}
+          ref: ${{ env.REF }}
+          initial-status: success
+
+      - name: Generate GitHub App token
+        uses: navikt/github-app-token-generator@a3831f44404199df32d8f39f7c0ad9bb8fa18b1c
+        id: get-token
+        with:
+          app-id: ${{ env.GH_APP_ID }}
+          private-key: ${{ env.GH_APP_PRIVATE_KEY }}
+
+      - name: Delete with GitHub App token
+        uses: Raj-Organization-1234/delete-deployment-environment@release
+        with:
+          token: ${{ steps.get-token.outputs.token }}
+          environment: ${{ env.ENVIRONMENT }}
+          ref: ${{ env.REF }}
