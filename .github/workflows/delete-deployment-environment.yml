@@ -34,6 +34,20 @@ jobs:
           token: ${{ env.REPO_ACCESS_TOKEN }}
           environment: ${{ env.ENVIRONMENT }}
 
+      - name: 🧪 Verify environment was deleted
+        run: |
+          status=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: token ${{ env.REPO_ACCESS_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/${{ github.repository }}/environments/${{ env.ENVIRONMENT }})
+
+          if [ "$status" -eq 404 ]; then
+            echo "✅ Environment deleted"
+          else
+            echo "❌ Environment still exists (status: $status)"
+            exit 1
+          fi
+
   only-remove:
     name: 🗑️ Only Remove Deployments
     needs: full-cleanup
@@ -53,6 +67,21 @@ jobs:
           token: ${{ env.REPO_ACCESS_TOKEN }}
           environment: ${{ env.ENVIRONMENT }}
           onlyRemoveDeployments: true
+
+      - name: 🧪 Verify deployments were removed
+        run: |
+          deployments=$(curl -s \
+            -H "Authorization: token ${{ env.REPO_ACCESS_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/deployments?environment=${{ env.ENVIRONMENT }}")
+
+          count=$(echo "$deployments" | jq 'length')
+          if [ "$count" -eq 0 ]; then
+            echo "✅ Deployments removed"
+          else
+            echo "❌ Still $count deployments remain"
+            exit 1
+          fi
 
   only-deactivate:
     name: 🔕 Only Deactivate Deployments
@@ -74,6 +103,23 @@ jobs:
           environment: ${{ env.ENVIRONMENT }}
           onlyDeactivateDeployments: true
 
+      - name: 🧪 Verify deployments are inactive
+        run: |
+          deployments=$(curl -s \
+            -H "Authorization: token ${{ env.REPO_ACCESS_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/deployments?environment=${{ env.ENVIRONMENT }}")
+
+          inactive_count=$(echo "$deployments" | jq '[.[] | select(.inactive_at != null)] | length')
+          total=$(echo "$deployments" | jq 'length')
+
+          if [ "$inactive_count" -eq "$total" ]; then
+            echo "✅ All deployments are inactive"
+          else
+            echo "❌ $((total - inactive_count)) deployments are still active"
+            exit 1
+          fi
+
   ref-only:
     name: 🎯 Delete Deployments by Ref Only
     needs: only-deactivate
@@ -94,6 +140,21 @@ jobs:
           environment: ${{ env.ENVIRONMENT }}
           ref: ${{ env.REF }}
           onlyRemoveDeployments: true
+
+      - name: 🧪 Verify deployments by ref are removed
+        run: |
+          deployments=$(curl -s \
+            -H "Authorization: token ${{ env.REPO_ACCESS_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/deployments?ref=${{ env.REF }}&environment=${{ env.ENVIRONMENT }}")
+
+          count=$(echo "$deployments" | jq 'length')
+          if [ "$count" -eq 0 ]; then
+            echo "✅ Ref deployments removed"
+          else
+            echo "❌ Still $count deployments for ref remain"
+            exit 1
+          fi
 
   github-app-cleanup:
     name: 🛡️ Cleanup Using GitHub App Token
@@ -121,3 +182,18 @@ jobs:
           token: ${{ steps.get-token.outputs.token }}
           environment: ${{ env.ENVIRONMENT }}
           ref: ${{ env.REF }}
+
+      - name: 🧪 Verify deployments by ref are removed
+        run: |
+          deployments=$(curl -s \
+            -H "Authorization: token ${{ env.REPO_ACCESS_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${{ github.repository }}/deployments?ref=${{ env.REF }}&environment=${{ env.ENVIRONMENT }}")
+
+          count=$(echo "$deployments" | jq 'length')
+          if [ "$count" -eq 0 ]; then
+            echo "✅ Ref deployments removed"
+          else
+            echo "❌ Still $count deployments for ref remain"
+            exit 1
+          fi
